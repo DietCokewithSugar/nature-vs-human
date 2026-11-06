@@ -76,7 +76,7 @@ writeFileSync(
 
 以下模型来自 [${source.name}](${source.home})，按 [${source.license}](${source.licenseUrl}) 授权使用。
 
-改动说明：模型经 glTF-Transform 做了网格压缩（meshopt）、动画重采样和去重，几何形状和配色未改。游戏内会对部分模型统一缩放。
+改动说明：所有模型经 glTF-Transform 做了网格压缩（meshopt）、动画重采样和去重，游戏内统一缩放。以下生物是在 Polyfork 模型基础上改装的：猛犸（Elephant）、剑齿虎 / 老虎 / 野猫（Cat）、洞熊（Bear）、野猪 / 犀牛（Pig）、野牛（Ox）、蝗虫（Meadow grasshopper）、蚊子（Common wasp）、白蚁（Wood ant）。改装内容是用 Radix 配色重新上色、拉伸比例，并加上程序生成的象牙、獠牙、角和口器（见 src/scene/kitbash.ts）。人物模型的走路动作由代码驱动。帐篷由代码生成。
 
 ${lines}
 

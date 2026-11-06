@@ -1,48 +1,69 @@
-import { useEffect, useState } from 'preact/hooks';
+import { useState } from 'preact/hooks';
 import {
   BALANCE,
+  BRANCHES,
+  BRANCH_NAMES,
+  CLASSES,
   CREATURES,
+  DOMESTICS,
+  META_UPGRADES,
   creatureCost,
   creatureCostN,
   creatureProd,
-  genesFree,
-  geneLevel,
-  availableGenes,
   isCreatureVisible,
-  lifetimeForGenes,
+  meets,
+  metaFree,
+  metaLevel,
   milestonesReached,
   nextMilestone,
+  skillStatus,
+  skillsOfBranch,
+  type Branch,
   type CreatureDef,
+  type MetaUpgradeDef,
+  type SkillDef,
   type UpgradeDef,
 } from '../core/index.ts';
 import { Money, Num, Segmented, Thumb } from './common.tsx';
 import { COPY } from './copy.ts';
-import { describeEffects, describeGene } from './describe.ts';
-import { IconDna } from './icons.tsx';
-import { app, frame, tab, type Tab } from './store.ts';
+import { describeEffects, describeMeta, describeNeed } from './describe.ts';
+import { IconCheck, IconDna, IconLock } from './icons.tsx';
+import { app, frame, modal, tab, type Tab } from './store.ts';
 
 export function Panel() {
   frame.value;
   const g = app.game;
-  const upgradesReady = g
-    .availableUpgrades()
-    .filter((u) => u.kind !== 'era' && u.kind !== 'ending' && g.upgradeCost(u.id).lte(g.state.money)).length;
-  const canEvolve = g.genesOnEvolve() >= 1;
+  const run = g.run;
+  const affordableSkills =
+    g.running &&
+    (skillCount() +
+      g.availableUpgrades().filter((u) => u.kind === 'creature' && g.upgradeCost(u.id).lte(run.money)).length);
   const tabs: { value: Tab; label: string }[] = [
     { value: 'creatures', label: COPY.tabs.creatures },
-    { value: 'upgrades', label: upgradesReady ? `${COPY.tabs.upgrades} ${upgradesReady}` : COPY.tabs.upgrades },
-    { value: 'evolve', label: canEvolve ? `${COPY.tabs.evolve} ●` : COPY.tabs.evolve },
+    { value: 'skills', label: affordableSkills ? `${COPY.tabs.skills} ${affordableSkills}` : COPY.tabs.skills },
+    { value: 'meta', label: metaFree(g.meta) > 0 ? `${COPY.tabs.meta} ●` : COPY.tabs.meta },
   ];
   return (
     <aside class="panel" aria-label="商店">
       <Segmented label="分类" value={tab.value} options={tabs} onChange={(v) => (tab.value = v)} />
       <div class="panel-body">
         {tab.value === 'creatures' && <CreatureList />}
-        {tab.value === 'upgrades' && <UpgradeList />}
-        {tab.value === 'evolve' && <EvolvePanel />}
+        {tab.value === 'skills' && <SkillTree />}
+        {tab.value === 'meta' && <MetaShop />}
       </div>
     </aside>
   );
+}
+
+function skillCount(): number {
+  const g = app.game;
+  let n = 0;
+  for (const b of BRANCHES) {
+    for (const s of skillsOfBranch(b)) {
+      if (skillStatus(g.run, g.mods, s) === 'available' && g.skillCost(s.id).lte(g.run.money)) n++;
+    }
+  }
+  return n;
 }
 
 // ── Creatures ───────────────────────────────────────────────────
@@ -51,10 +72,8 @@ function CreatureList() {
   frame.value;
   const g = app.game;
   const amount = app.settings.value.buyAmount;
-  const visible = CREATURES.filter((c) => isCreatureVisible(g.state, c.id));
-  const ups = g.availableUpgrades();
-  const ticket = ups.find((u) => u.kind === 'era');
-  const ending = ups.find((u) => u.kind === 'ending');
+  const visible = CREATURES.filter((c) => isCreatureVisible(g.run, c.id));
+  const ticket = g.availableUpgrades().find((u) => u.kind === 'era');
   return (
     <>
       <Segmented
@@ -63,8 +82,7 @@ function CreatureList() {
         options={['1', '10', '100', 'max'].map((v) => ({ value: v, label: COPY.buyAmounts[v]! }))}
         onChange={(v) => app.updateSettings({ buyAmount: v === 'max' ? 'max' : (Number(v) as 1 | 10 | 100) })}
       />
-      {ending && <TicketCard def={ending} label={COPY.creatures.finalBill} />}
-      {ticket && <TicketCard def={ticket} label={COPY.creatures.nextEra} />}
+      {ticket && <TicketCard def={ticket} />}
       <div class="list">
         {[...visible].reverse().map((c) => (
           <CreatureRow key={c.id} def={c} />
@@ -77,24 +95,44 @@ function CreatureList() {
 function CreatureRow({ def }: { def: CreatureDef }) {
   frame.value;
   const g = app.game;
-  const s = g.state;
-  const c = s.creatures[def.id];
+  const run = g.run;
+  const defected = run.defected[def.id];
+  if (defected !== undefined) {
+    const to = DOMESTICS[def.tame!].name;
+    return (
+      <div class="row creature" data-cls={def.cls} data-defected>
+        <Thumb model={DOMESTICS[def.tame!].model} />
+        <div class="row-main">
+          <div class="row-title">
+            <span class="name">{def.name}</span>
+            <span class="role">{COPY.creatures.defected(to)}</span>
+          </div>
+          <div class="row-meta">
+            <span class="num count">
+              <Num value={defected} />
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const c = run.creatures[def.id];
   const pref = app.settings.value.buyAmount;
   const n = pref === 'max' ? Math.max(1, g.buyCount(def.id, 'max')) : pref;
   const cost = n === 1 ? creatureCost(def.id, c.bought) : creatureCostN(def.id, c.bought, n);
-  const affordable = cost.lte(s.money);
   const next = nextMilestone(c.bought);
   const reached = milestonesReached(c.bought);
   const prev = reached > 0 ? BALANCE.milestones[reached - 1]! : 0;
   const progress = next ? (c.bought - prev) / (next - prev) : 1;
-  const prod = creatureProd(s, g.mods, def.id);
-  const fresh = c.bought === 0;
+  const fresh = c.bought + c.bred === 0;
+  const taming = run.taming[def.id] ?? 0;
   return (
-    <div class="row creature" data-era={def.era} data-fresh={fresh || undefined}>
+    <div class="row creature" data-cls={def.cls} data-fresh={fresh || undefined}>
       <Thumb model={def.model} />
       <div class="row-main">
         <div class="row-title">
           <span class="name">{def.name}</span>
+          <span class="cls-badge">{CLASSES[def.cls].name}</span>
           <span class="role">{def.title}</span>
         </div>
         <div class="row-meta">
@@ -108,19 +146,19 @@ function CreatureRow({ def }: { def: CreatureDef }) {
           )}
           {!fresh && (
             <span class="num prod">
-              <Money value={prod} />
+              <Money value={creatureProd(run, g.mods, def.id)} />
               {COPY.perSecond}
             </span>
           )}
         </div>
-        <div class="milestone" aria-hidden="true">
-          <i style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, progress))})` }} />
+        <div class="milestone" data-taming={taming > 0.01 || undefined} aria-hidden="true">
+          <i style={{ transform: `scaleX(${Math.max(0.02, Math.min(1, taming > 0.01 ? taming : progress))})` }} />
         </div>
       </div>
       <button
         type="button"
         class="buy"
-        disabled={!affordable}
+        disabled={!g.running || cost.gt(run.money)}
         onClick={() => (g.buyCreature(def.id, pref) > 0 ? app.sfx.buy() : app.sfx.deny())}
       >
         <Money value={cost} />
@@ -134,7 +172,7 @@ function CreatureRow({ def }: { def: CreatureDef }) {
   );
 }
 
-function TicketCard({ def, label }: { def: UpgradeDef; label: string }) {
+function TicketCard({ def }: { def: UpgradeDef }) {
   frame.value;
   const g = app.game;
   const cost = g.upgradeCost(def.id);
@@ -143,52 +181,159 @@ function TicketCard({ def, label }: { def: UpgradeDef; label: string }) {
   return (
     <div class="ticket" data-era={eraId}>
       <div class="ticket-text">
-        <div class="ticket-label">{label}</div>
+        <div class="ticket-label">{COPY.creatures.nextEra}</div>
         <div class="ticket-name">{def.name}</div>
       </div>
-      <button
-        type="button"
-        class="buy solid"
-        disabled={cost.gt(g.state.money)}
-        onClick={() => (g.buyUpgrade(def.id) ? undefined : app.sfx.deny())}
-      >
+      <button type="button" class="buy solid" disabled={cost.gt(g.run.money)} onClick={() => g.buyUpgrade(def.id) || app.sfx.deny()}>
         <Money value={cost} />
       </button>
     </div>
   );
 }
 
-// ── Upgrades ────────────────────────────────────────────────────
+// ── Skills ──────────────────────────────────────────────────────
 
-function UpgradeList() {
+type BranchTab = Branch | 'boosts';
+
+function SkillTree() {
+  frame.value;
+  const [branch, setBranch] = useState<BranchTab>('assassin');
+  const g = app.game;
+  const tabs: BranchTab[] = [...BRANCHES, 'boosts'];
+  const count = (b: BranchTab) =>
+    b === 'boosts'
+      ? g.availableUpgrades().filter((u) => u.kind === 'creature' && g.upgradeCost(u.id).lte(g.run.money)).length
+      : skillsOfBranch(b).filter((s) => skillStatus(g.run, g.mods, s) === 'available' && g.skillCost(s.id).lte(g.run.money)).length;
+  return (
+    <>
+      <div class="branch-chips" role="tablist" aria-label="技能分支">
+        {tabs.map((b) => {
+          const n = count(b);
+          return (
+            <button
+              type="button"
+              role="tab"
+              key={b}
+              class="branch-chip"
+              data-cls={b}
+              aria-selected={branch === b}
+              onClick={() => setBranch(b)}
+            >
+              {b === 'boosts' ? COPY.skills.boosts : BRANCH_NAMES[b]}
+              {n > 0 && <span class="dot num">{n}</span>}
+            </button>
+          );
+        })}
+      </div>
+      {branch === 'boosts' ? <Boosts /> : <BranchNodes branch={branch} />}
+    </>
+  );
+}
+
+function BranchNodes({ branch }: { branch: Branch }) {
+  const nodes = skillsOfBranch(branch);
+  const rows: SkillDef[][] = [];
+  for (const s of nodes) {
+    const last = rows[rows.length - 1];
+    if (s.fork && last && last[0]?.fork?.group === s.fork.group) last.push(s);
+    else rows.push([s]);
+  }
+  return (
+    <div class="tree">
+      {rows.map((row) =>
+        row.length > 1 ? (
+          <div class="fork" key={row[0]!.id}>
+            <span class="fork-label">{COPY.skills.fork}</span>
+            <div class="fork-pair">
+              {row.map((s) => (
+                <SkillNode key={s.id} def={s} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <SkillNode key={row[0]!.id} def={row[0]!} />
+        ),
+      )}
+    </div>
+  );
+}
+
+function SkillNode({ def }: { def: SkillDef }) {
+  frame.value;
+  const g = app.game;
+  const status = skillStatus(g.run, g.mods, def);
+  const cost = g.skillCost(def.id);
+  const affordable = status === 'available' && cost.lte(g.run.money) && g.running;
+  const need = status === 'locked' ? def.req.find((r) => !meets(g.run, r)) : undefined;
+  return (
+    <button
+      type="button"
+      class="node"
+      data-cls={def.branch}
+      data-status={status}
+      disabled={!affordable}
+      onClick={() => (g.buySkill(def.id) ? app.sfx.upgrade() : app.sfx.deny())}
+    >
+      <span class="node-main">
+        <span class="name">{def.name}</span>
+        <span class="effect">{describeEffects(def.effects)}</span>
+      </span>
+      <span class="node-side">
+        {status === 'owned' && <IconCheck class="node-icon" />}
+        {status === 'available' && (
+          <span class="price">
+            <Money value={cost} />
+          </span>
+        )}
+        {status === 'locked' && (
+          <span class="need">
+            <IconLock class="inline-icon" />
+            {need ? describeNeed(need) : ''}
+          </span>
+        )}
+        {status === 'forkLocked' && (
+          <span class="need">
+            <IconLock class="inline-icon" />
+            {COPY.skills.forkLocked}
+          </span>
+        )}
+        {status === 'forkClosed' && <span class="need">{COPY.skills.forkClosed}</span>}
+      </span>
+    </button>
+  );
+}
+
+function Boosts() {
   frame.value;
   const g = app.game;
   const list = g
     .availableUpgrades()
-    .filter((u) => u.kind !== 'era' && u.kind !== 'ending')
+    .filter((u) => u.kind === 'creature')
     .map((u) => ({ u, cost: g.upgradeCost(u.id) }))
     .sort((a, b) => (a.cost.lt(b.cost) ? -1 : 1));
-  if (!list.length) return <p class="empty">{COPY.upgrades.empty}</p>;
+  if (!list.length) return <p class="empty">{COPY.skills.empty}</p>;
   return (
-    <div class="list">
+    <div class="tree">
       {list.map(({ u, cost }) => {
-        const affordable = cost.lte(g.state.money);
+        const cls = CREATURES.find((c) => u.effects.some((e) => e.type === 'creatureMult' && e.creature === c.id))?.cls;
         return (
           <button
             type="button"
             key={u.id}
-            class="row upgrade"
-            data-era={u.era}
-            disabled={!affordable}
+            class="node"
+            data-cls={cls}
+            data-status="available"
+            disabled={!g.running || cost.gt(g.run.money)}
             onClick={() => (g.buyUpgrade(u.id) ? app.sfx.upgrade() : app.sfx.deny())}
           >
-            <span class="kind-dot" aria-hidden="true" />
-            <span class="row-main">
+            <span class="node-main">
               <span class="name">{u.name}</span>
               <span class="effect">{describeEffects(u.effects)}</span>
             </span>
-            <span class="price">
-              <Money value={cost} />
+            <span class="node-side">
+              <span class="price">
+                <Money value={cost} />
+              </span>
             </span>
           </button>
         );
@@ -197,33 +342,17 @@ function UpgradeList() {
   );
 }
 
-// ── Evolution ───────────────────────────────────────────────────
+// ── Meta ────────────────────────────────────────────────────────
 
-function EvolvePanel() {
+function MetaShop() {
   frame.value;
   const g = app.game;
-  const s = g.state;
-  const gain = g.genesOnEvolve();
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = setTimeout(() => setArmed(false), 4000);
-    return () => clearTimeout(t);
-  }, [armed]);
-  const bonus = Math.round((g.mods.geneMult - 1) * 100);
-  const need = lifetimeForGenes(s.genes + 1).sub(s.lifetimeEarned);
-  const free = genesFree(s);
-
-  const onEvolve = () => {
-    if (gain < 1) return;
-    if (!armed) {
-      setArmed(true);
-      return;
-    }
-    setArmed(false);
-    g.evolve();
-  };
-
+  const free = metaFree(g.meta);
+  const groups: { kind: MetaUpgradeDef['kind']; title: string }[] = [
+    { kind: 'route', title: COPY.meta.routes },
+    { kind: 'fork', title: COPY.meta.forks },
+    { kind: 'perk', title: COPY.meta.perks },
+  ];
   return (
     <>
       <div class="gene-card">
@@ -231,70 +360,58 @@ function EvolvePanel() {
           <div class="gene-count">
             <IconDna class="gene-icon" />
             <span class="num">
-              <Num value={s.genes} />
+              <Num value={free} />
             </span>
-            <span class="unit">{COPY.evolve.genes}</span>
-          </div>
-          <div class="gene-bonus num">
-            +<Num value={bonus} />% {COPY.evolve.bonus}
+            <span class="unit">{COPY.meta.points}</span>
           </div>
         </div>
-        <button type="button" class="evolve-btn" data-armed={armed || undefined} disabled={gain < 1} onClick={onEvolve}>
-          <span class="btn-label">{armed ? COPY.evolve.confirm : COPY.evolve.action}</span>
-          <span class="btn-sub num">
-            {gain >= 1 ? (
-              <>
-                +<Num value={gain} /> {COPY.evolve.genes}
-              </>
-            ) : (
-              <>
-                {COPY.evolve.needMore} <Money value={need} />
-              </>
-            )}
-          </span>
+        <button type="button" class="evolve-btn" onClick={() => (modal.value = 'setup')}>
+          <span class="btn-label">{COPY.setup.title}</span>
         </button>
       </div>
-      <div class="section-label">
-        <span>{COPY.evolve.shop}</span>
-        <span class="num">
-          <Num value={free} /> {COPY.evolve.genes}
-        </span>
-      </div>
-      <div class="list">
-        {availableGenes(s).map((def) => {
-          const level = geneLevel(s, def.id);
-          const next = def.levels[level];
-          const shown = next ?? def.levels[def.levels.length - 1]!;
-          const max = def.levels.length;
-          return (
-            <button
-              type="button"
-              key={def.id}
-              class="row upgrade gene"
-              disabled={!next || next.cost > free}
-              onClick={() => (g.buyGene(def.id) ? app.sfx.upgrade() : app.sfx.deny())}
-            >
-              <span class="kind-dot" aria-hidden="true" />
-              <span class="row-main">
-                <span class="name">
-                  {def.name}
-                  {max > 1 && <span class="level num">{COPY.evolve.level(level, max)}</span>}
-                </span>
-                <span class="effect">{shown.effects.map(describeGene).join(' · ')}</span>
-              </span>
-              <span class="price num">
-                {next ? (
-                  <>
-                    <Num value={next.cost} /> {COPY.evolve.genes}
-                  </>
-                ) : (
-                  COPY.evolve.maxed
-                )}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {groups.map(({ kind, title }) => (
+        <section key={kind} class="meta-group">
+          <div class="section-label">
+            <span>{title}</span>
+          </div>
+          <div class="tree">
+            {META_UPGRADES.filter((m) => m.kind === kind).map((def) => {
+              const level = metaLevel(g.meta, def.id);
+              const next = def.levels[level];
+              const shown = next ?? def.levels[def.levels.length - 1]!;
+              const max = def.levels.length;
+              return (
+                <button
+                  type="button"
+                  key={def.id}
+                  class="node"
+                  data-cls="meta"
+                  data-status={next ? 'available' : 'owned'}
+                  disabled={!next || next.cost > free}
+                  onClick={() => (g.buyMeta(def.id) ? app.sfx.upgrade() : app.sfx.deny())}
+                >
+                  <span class="node-main">
+                    <span class="name">
+                      {def.name}
+                      {max > 1 && <span class="level num">{COPY.meta.level(level, max)}</span>}
+                    </span>
+                    <span class="effect">{shown.effects.map(describeMeta).join(' · ')}</span>
+                  </span>
+                  <span class="node-side">
+                    {next ? (
+                      <span class="price num">
+                        <Num value={next.cost} /> {COPY.meta.points}
+                      </span>
+                    ) : (
+                      <IconCheck class="node-icon" />
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ))}
     </>
   );
 }

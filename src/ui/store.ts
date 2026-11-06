@@ -1,9 +1,9 @@
 import { signal, type Signal } from '@preact/signals';
-import type { EraId, Game } from '../core/index.ts';
+import type { Difficulty, EraId, Game, RouteId } from '../core/index.ts';
 import type { Settings } from '../data/storage.ts';
 
-export type Tab = 'creatures' | 'upgrades' | 'evolve';
-export type ModalId = 'leaderboard' | 'settings' | 'ending' | null;
+export type Tab = 'creatures' | 'skills' | 'meta';
+export type ModalId = 'leaderboard' | 'settings' | 'setup' | 'result' | null;
 
 export interface Toast {
   id: number;
@@ -56,7 +56,7 @@ export interface AppContext {
   exportSave: () => string;
   importSave: (text: string) => boolean;
   resetSave: () => void;
-  onEndingClosed: () => void;
+  startRun: (route: RouteId, difficulty: Difficulty) => boolean;
   leaderboard: import('../data/leaderboard.ts').Leaderboard;
   sfx: import('./sfx.ts').Sfx;
 }

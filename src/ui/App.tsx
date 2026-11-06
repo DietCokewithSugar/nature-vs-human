@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'preact/hooks';
-import { Actions, Counter, EraBar, Mechanics, TapHint, Ticker } from './hud.tsx';
+import { Actions, Counter, Dock, EraBar, RunBar, TapHint, Ticker } from './hud.tsx';
 import { Flash, Floats, Modals, Toasts } from './overlays.tsx';
 import { Panel } from './panel.tsx';
 
@@ -24,7 +24,7 @@ export function App({ onInsets }: AppProps) {
       const sheet = panel.width > w * 0.7;
       if (sheet) {
         const coverTop = Math.min(panel.top, mech && mech.height ? mech.top : panel.top);
-        onInsets({ top: (top?.bottom ?? 0) * 0.6, right: 0, bottom: h - coverTop, left: 0 });
+        onInsets({ top: top?.bottom ?? 0, right: 0, bottom: h - coverTop, left: 0 });
       } else {
         onInsets({ top: 0, right: w - panel.left, bottom: 0, left: 0 });
       }
@@ -50,10 +50,11 @@ export function App({ onInsets }: AppProps) {
             <Counter />
             <EraBar />
           </div>
+          <RunBar />
           <Actions />
         </header>
         <div class="dock">
-          <Mechanics />
+          <Dock />
           <Ticker />
         </div>
         <Panel />

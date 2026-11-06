@@ -1,12 +1,24 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
-import { D, formatDuration, formatNumber } from '../core/index.ts';
+import {
+  D,
+  DIFFICULTIES,
+  DIFFICULTY_GATE,
+  DIFFICULTY_NAMES,
+  ROUTES,
+  difficultyUnlocked,
+  formatDuration,
+  metaMods,
+  type Difficulty,
+  type RouteId,
+} from '../core/index.ts';
 import credits from '../data/credits.json';
 import { NICKNAME_MAX, type BoardKind, type BoardResult } from '../data/leaderboard.ts';
 import { IconButton, Money, Segmented } from './common.tsx';
 import { COPY } from './copy.ts';
-import { IconClose } from './icons.tsx';
-import { app, flash, floats, modal, pushToast, toasts } from './store.ts';
+import { describeEffects } from './describe.ts';
+import { IconClose, IconLock } from './icons.tsx';
+import { app, flash, floats, modal, pushToast, tab, toasts } from './store.ts';
 
 export function Toasts() {
   return (
@@ -69,11 +81,120 @@ export function Modals() {
       return <LeaderboardModal />;
     case 'settings':
       return <SettingsModal />;
-    case 'ending':
-      return <EndingModal />;
+    case 'setup':
+      return <SetupModal />;
+    case 'result':
+      return <ResultModal />;
     default:
       return null;
   }
+}
+
+// ── New run ─────────────────────────────────────────────────────
+
+function SetupModal() {
+  const g = app.game;
+  const m = metaMods(g.meta);
+  const [route, setRoute] = useState<RouteId>(g.run.route);
+  const [difficulty, setDifficulty] = useState<Difficulty>(difficultyUnlocked(g.meta, g.run.difficulty) ? g.run.difficulty : 'normal');
+  const abandoning = g.running && g.run.time > 30;
+  return (
+    <Modal title={COPY.setup.title}>
+      <div class="section-label">
+        <span>{COPY.setup.route}</span>
+      </div>
+      <div class="card choices">
+        {(Object.keys(ROUTES) as RouteId[]).map((id) => {
+          const r = ROUTES[id];
+          const open = m.routesUnlocked[id];
+          return (
+            <button
+              type="button"
+              key={id}
+              class="choice"
+              aria-pressed={route === id}
+              disabled={!open}
+              onClick={() => setRoute(id)}
+            >
+              <span class="name">{r.name}</span>
+              <span class="effect">{open ? describeEffects(r.effects) || COPY.setup.balanced : COPY.setup.locked}</span>
+              {!open && <IconLock class="choice-lock" />}
+            </button>
+          );
+        })}
+      </div>
+      <div class="section-label">
+        <span>{COPY.setup.difficulty}</span>
+      </div>
+      <div class="card choices row3">
+        {DIFFICULTIES.map((d) => {
+          const open = difficultyUnlocked(g.meta, d);
+          const gate = DIFFICULTY_GATE[d];
+          return (
+            <button type="button" key={d} class="choice" aria-pressed={difficulty === d} disabled={!open} onClick={() => setDifficulty(d)}>
+              <span class="name">{DIFFICULTY_NAMES[d]}</span>
+              <span class="effect">{open ? `×${({ normal: 1, hard: 1.6, brutal: 2.4 } as const)[d]} ${COPY.meta.points}` : gate ? COPY.setup.needWin(DIFFICULTY_NAMES[gate]) : ''}</span>
+            </button>
+          );
+        })}
+      </div>
+      {abandoning && <p class="warn-line">{COPY.setup.abandon}</p>}
+      <button
+        type="button"
+        class="btn solid wide"
+        onClick={() => {
+          if (app.startRun(route, difficulty)) modal.value = null;
+        }}
+      >
+        {abandoning ? COPY.setup.abandonYes : COPY.setup.start}
+      </button>
+    </Modal>
+  );
+}
+
+// ── Run result ──────────────────────────────────────────────────
+
+function ResultModal() {
+  const g = app.game;
+  const res = g.run.result;
+  if (!res) return null;
+  const close = () => (modal.value = null);
+  return (
+    <Modal title={res.won ? COPY.result.won : COPY.result.lost} onClose={close}>
+      <p class="ending-body">{res.won ? COPY.result.wonBody : COPY.result.lostBody}</p>
+      <dl class="card stats">
+        <div>
+          <dt>{COPY.result.time}</dt>
+          <dd class="num">{formatDuration(res.time)}</dd>
+        </div>
+        <div>
+          <dt>{COPY.result.earned}</dt>
+          <dd>
+            <Money value={D(10).pow(res.earnedLog10)} />
+          </dd>
+        </div>
+        <div>
+          <dt>{COPY.result.points}</dt>
+          <dd class="num">+{res.points}</dd>
+        </div>
+      </dl>
+      <div class="btn-row wide">
+        <button
+          type="button"
+          class="btn wide"
+          onClick={() => {
+            tab.value = 'meta';
+            close();
+          }}
+        >
+          {COPY.tabs.meta}
+        </button>
+        <button type="button" class="btn solid wide" onClick={() => (modal.value = 'setup')}>
+          {COPY.result.again}
+        </button>
+      </div>
+    </Modal>
+  );
 }
 
 // ── Leaderboard ─────────────────────────────────────────────────
@@ -81,6 +202,7 @@ export function Modals() {
 function LeaderboardModal() {
   const lb = app.leaderboard;
   const [kind, setKind] = useState<BoardKind>('lifetime');
+  const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [data, setData] = useState<BoardResult | null>(null);
   const [loading, setLoading] = useState(lb.online);
   const [name, setName] = useState(lb.nickname.value);
@@ -91,7 +213,7 @@ function LeaderboardModal() {
     setLoading(true);
     void (async () => {
       await lb.submit(app.game.state, true);
-      const res = await lb.fetch(kind);
+      const res = await lb.fetch(kind, difficulty);
       if (!live) return;
       setData(res);
       setLoading(false);
@@ -99,17 +221,15 @@ function LeaderboardModal() {
     return () => {
       live = false;
     };
-  }, [kind]);
+  }, [kind, difficulty]);
 
-  const show = (v: number) =>
-    kind === 'lifetime' ? <Money value={D(10).pow(v)} /> : <span class="num">{formatDuration(v)}</span>;
+  const show = (v: number) => (kind === 'fastest' ? <span class="num">{formatDuration(v)}</span> : <Money value={D(10).pow(v)} />);
 
   const saveName = async () => {
-    const ok = await lb.setNickname(name, app.game.state);
-    if (ok) {
+    if (await lb.setNickname(name, app.game.state)) {
       setName(lb.nickname.value);
       pushToast({ title: COPY.toast.nicknameSaved });
-      if (lb.online) setData(await lb.fetch(kind));
+      if (lb.online) setData(await lb.fetch(kind, difficulty));
     }
   };
 
@@ -123,10 +243,19 @@ function LeaderboardModal() {
         value={kind}
         options={[
           { value: 'lifetime', label: COPY.leaderboard.lifetime },
-          { value: 'speedrun', label: COPY.leaderboard.speedrun },
+          { value: 'best', label: COPY.leaderboard.best },
+          { value: 'fastest', label: COPY.leaderboard.fastest },
         ]}
         onChange={setKind}
       />
+      {kind === 'fastest' && (
+        <Segmented
+          label="难度"
+          value={difficulty}
+          options={DIFFICULTIES.map((d) => ({ value: d, label: DIFFICULTY_NAMES[d] }))}
+          onChange={setDifficulty}
+        />
+      )}
       <div class="card board">
         {!lb.online && <p class="empty">{COPY.leaderboard.offline}</p>}
         {lb.online && loading && <p class="empty">{COPY.leaderboard.loading}</p>}
@@ -196,7 +325,7 @@ function SettingsModal() {
             <a href={credits.models.licenseUrl} target="_blank" rel="noreferrer">
               {credits.models.license}
             </a>{' '}
-            · 已压缩
+            · {COPY.settings.creditsModelsNote}
           </p>
           <ul class="credit-list">
             {credits.models.items.map((c) => (
@@ -292,6 +421,9 @@ function SettingsModal() {
         )}
       </div>
       <div class="card settings">
+        <button type="button" class="btn link" onClick={() => (modal.value = 'setup')}>
+          {COPY.settings.newRun}
+        </button>
         <button type="button" class="btn link" onClick={() => setShowCredits(true)}>
           {COPY.settings.credits}
         </button>
@@ -306,51 +438,13 @@ function SettingsModal() {
               <button type="button" class="btn" onClick={() => setConfirmReset(false)}>
                 {COPY.settings.cancel}
               </button>
-              <button
-                type="button"
-                class="btn danger"
-                onClick={() => app.resetSave()}
-              >
+              <button type="button" class="btn danger" onClick={() => app.resetSave()}>
                 {COPY.settings.resetYes}
               </button>
             </div>
           </div>
         )}
       </div>
-    </Modal>
-  );
-}
-
-// ── Ending ──────────────────────────────────────────────────────
-
-function EndingModal() {
-  const s = app.game.state;
-  const close = () => {
-    modal.value = null;
-    app.onEndingClosed();
-  };
-  return (
-    <Modal title={COPY.ending.title} onClose={close}>
-      <p class="ending-body">{COPY.ending.body}</p>
-      <dl class="card stats">
-        <div>
-          <dt>{COPY.ending.time}</dt>
-          <dd class="num">{formatDuration(s.endedAt ?? s.playTime)}</dd>
-        </div>
-        <div>
-          <dt>{COPY.ending.lifetime}</dt>
-          <dd>
-            <Money value={s.lifetimeEarned} />
-          </dd>
-        </div>
-        <div>
-          <dt>{COPY.ending.evolutions}</dt>
-          <dd class="num">{formatNumber(s.evolutions)}</dd>
-        </div>
-      </dl>
-      <button type="button" class="btn solid wide" onClick={close}>
-        {COPY.ending.continue}
-      </button>
     </Modal>
   );
 }

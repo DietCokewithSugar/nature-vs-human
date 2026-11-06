@@ -1529,3 +1529,498 @@ li[data-top='3'] .rank {
     min-width: 76px;
   }
 }
+
+/* ─────────────────────────────────────────────────────────────
+ * v2: the run bar, class colours, skill tree, run setup.
+ * ───────────────────────────────────────────────────────────── */
+
+.runbar {
+  flex: 1;
+  max-width: 440px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 14px 11px;
+  border-radius: var(--r-panel);
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-2);
+  pointer-events: auto;
+}
+
+.meter {
+  display: grid;
+  grid-template-columns: 76px 1fr 38px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.meter-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.meter-value {
+  text-align: right;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.meter-track {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--olive-a4);
+  overflow: visible;
+}
+
+.meter-track i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transition: transform 0.3s ease-out, background-color 0.4s;
+  background: var(--grass-9);
+}
+
+.meter[data-kind='research'] .meter-track i {
+  background: var(--olive-9);
+}
+
+.meter[data-level='alert'] .meter-track i {
+  background: var(--amber-9);
+}
+
+.meter[data-level='danger'] .meter-track i {
+  background: var(--tomato-9);
+}
+
+.meter[data-level='danger'] .meter-value {
+  color: var(--tomato-11);
+}
+
+/* Countermeasure marks on the research track. */
+.meter-track b {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--olive-8);
+}
+
+.meter-track b.hit {
+  background: var(--tomato-9);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--era-3, var(--olive-3));
+  color: var(--era-11, var(--olive-11));
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.chip.warn {
+  background: var(--amber-3);
+  color: var(--amber-11);
+}
+
+.chip.warn[data-hot] {
+  background: var(--tomato-3);
+  color: var(--tomato-11);
+  animation: blink 1.2s ease-in-out infinite;
+}
+
+/* Creature rows take the class colour. */
+.cls-badge {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--era-3);
+  color: var(--era-11);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.row[data-defected] {
+  opacity: 0.62;
+}
+
+.row[data-defected] .thumb img {
+  filter: grayscale(0.4);
+}
+
+.milestone[data-taming] i {
+  background: var(--tomato-9);
+}
+
+/* Skill tree */
+.branch-chips {
+  flex: none;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  margin: 0 calc(var(--p-panel) * -1);
+  padding: 0 var(--p-panel);
+}
+
+.branch-chips::-webkit-scrollbar {
+  display: none;
+}
+
+.branch-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--era-6);
+  background: var(--era-3);
+  color: var(--era-11);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.branch-chip[aria-selected='true'] {
+  background: var(--era-9);
+  border-color: transparent;
+  color: var(--era-on-9);
+}
+
+.branch-chip .dot {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--surface-solid);
+  color: var(--era-11);
+  font-size: 11px;
+  line-height: 17px;
+  text-align: center;
+}
+
+.tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.node {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 9px 10px 9px 12px;
+  border-radius: var(--r-card);
+  border: 1px solid transparent;
+  background: var(--surface-sunken);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 3px 0 0 var(--era-9);
+  transition: background-color 0.12s;
+}
+
+.node:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.node:active:not(:disabled) {
+  background: var(--surface-pressed);
+}
+
+.node:disabled {
+  cursor: default;
+}
+
+.node[data-status='owned'] {
+  background: var(--era-3);
+  border-color: var(--era-6);
+}
+
+.node[data-status='locked'],
+.node[data-status='forkLocked'],
+.node[data-status='forkClosed'] {
+  box-shadow: inset 3px 0 0 var(--olive-6);
+  border-color: var(--olive-a5);
+  border-style: dashed;
+  background: transparent;
+}
+
+.node[data-status='locked'] .name,
+.node[data-status='forkLocked'] .name,
+.node[data-status='forkClosed'] .name {
+  color: var(--text-muted);
+}
+
+.node[data-status='available']:disabled .price {
+  color: var(--text-muted);
+}
+
+.node-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.node .name {
+  white-space: normal;
+}
+
+.node-side {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.node-icon {
+  font-size: 20px;
+  color: var(--era-11);
+}
+
+.need {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* A fork: two exclusive nodes inside one dashed frame. Inner radius = frame radius − frame padding. */
+.fork {
+  position: relative;
+  padding: 16px var(--p-card) var(--p-card);
+  border-radius: var(--r-card);
+  border: 1px dashed var(--olive-a7);
+}
+
+.fork-label {
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  padding: 0 6px;
+  background: var(--surface-solid);
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 16px;
+}
+
+.fork-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.fork .node {
+  flex-direction: column;
+  align-items: stretch;
+  border-radius: calc(var(--r-card) - var(--p-card));
+}
+
+.fork .node-side {
+  justify-content: flex-start;
+}
+
+.meta-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Active skills */
+.active-btn {
+  --r-mech: 18px;
+  --p-mech: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: var(--p-mech) 14px var(--p-mech) var(--p-mech);
+  border-radius: var(--r-mech);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  -webkit-backdrop-filter: blur(16px) saturate(1.3);
+  backdrop-filter: blur(16px) saturate(1.3);
+  box-shadow: var(--shadow-2);
+  color: var(--text);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.active-icon {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: calc(var(--r-mech) - var(--p-mech));
+  background: var(--tomato-9);
+  color: white;
+  font-size: 21px;
+}
+
+.active-btn[data-active='rescue'] .active-icon {
+  background: var(--orange-9);
+}
+
+.active-btn[data-active='rampage'] .active-icon {
+  background: var(--brown-9);
+}
+
+.active-btn .btn-label {
+  font-size: 14px;
+}
+
+.active-btn .btn-sub {
+  margin-left: 2px;
+  color: var(--text-muted);
+}
+
+.active-btn:hover:not(:disabled) {
+  background: var(--olive-2);
+}
+
+.active-btn:disabled {
+  cursor: default;
+}
+
+.active-btn:disabled .active-icon {
+  background: var(--olive-a4);
+  color: var(--text-muted);
+}
+
+.mech[data-cls] .mech-icon {
+  background: var(--era-3);
+  color: var(--era-11);
+}
+
+/* Run setup */
+.choices {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.choices.row3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.choice {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--r-in);
+  border: 1px solid var(--olive-6);
+  background: var(--surface-solid);
+  text-align: left;
+  cursor: pointer;
+}
+
+.choice[aria-pressed='true'] {
+  border-color: var(--grass-8);
+  background: var(--grass-3);
+  box-shadow: inset 0 0 0 1px var(--grass-8);
+}
+
+.choice:disabled {
+  cursor: default;
+  background: var(--olive-a2);
+  border-style: dashed;
+}
+
+.choice:disabled .name {
+  color: var(--text-muted);
+}
+
+.choice-lock {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  color: var(--text-muted);
+}
+
+.warn-line {
+  margin: 0;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--tomato-11);
+}
+
+.btn-row.wide {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+@media (max-width: 860px), (orientation: portrait) and (max-width: 1100px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .runbar {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+    padding: 8px 12px 9px;
+    border-radius: 16px;
+    gap: 5px;
+  }
+
+  .meter {
+    grid-template-columns: 64px 1fr 34px;
+  }
+
+  .active-btn .btn-label {
+    display: none;
+  }
+
+  .active-btn {
+    padding-right: var(--p-mech);
+  }
+
+  .choices.row3 {
+    grid-template-columns: 1fr;
+  }
+
+  /* The research track already marks countermeasures; keep only taming warnings here. */
+  .chip:not(.warn) {
+    display: none;
+  }
+
+  .hud {
+    --sheet-h: 46dvh;
+  }
+}

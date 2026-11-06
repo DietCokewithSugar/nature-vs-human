@@ -6,10 +6,13 @@ import '@radix-ui/colors/grass.css';
 import '@radix-ui/colors/amber.css';
 import '@radix-ui/colors/tomato.css';
 import '@radix-ui/colors/cyan.css';
-import '@radix-ui/colors/cyan-alpha.css';
 import '@radix-ui/colors/lime.css';
 import '@radix-ui/colors/brown.css';
+import '@radix-ui/colors/orange.css';
 import '@radix-ui/colors/sky.css';
+import '@radix-ui/colors/gold.css';
+import '@radix-ui/colors/bronze.css';
+import '@radix-ui/colors/iris.css';
 import '@radix-ui/colors/black-alpha.css';
 import '@radix-ui/colors/white-alpha.css';
 import '../styles/tokens.css';
@@ -19,7 +22,10 @@ import '../styles/ui.css';
 import { signal } from '@preact/signals';
 import { render } from 'preact';
 import {
+  CLASSES,
   CREATURES,
+  CREATURE_BY_ID,
+  DOMESTICS,
   Game,
   exportSave,
   formatMoney,
@@ -27,13 +33,15 @@ import {
   tideLevel,
   type CoreEvent,
   type CreatureId,
+  type Difficulty,
   type EraId,
+  type RouteId,
 } from '../core/index.ts';
 import { Leaderboard } from '../data/leaderboard.ts';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type Settings } from '../data/storage.ts';
 import { CityScene, type SceneView } from '../scene/city.ts';
 import { App } from '../ui/App.tsx';
-import { COPY, NEWS_EVOLVED } from '../ui/copy.ts';
+import { COPY } from '../ui/copy.ts';
 import { Sfx } from '../ui/sfx.ts';
 import { flash, focusEra, frame, modal, pushFloat, pushToast, setApp } from '../ui/store.ts';
 import { GameLoop } from './loop.ts';
@@ -49,36 +57,45 @@ const scene = new CityScene(canvas);
 scene.setQuality(settings.value.quality);
 
 scene.onTap = ({ x, y }) => {
+  if (!game.running) return;
   const gain = game.click();
   sfx.click();
   pushFloat(x, y, `+${formatMoney(gain)}`);
 };
 
 function sceneView(): SceneView {
-  const s = game.state;
+  const run = game.run;
   const amounts = {} as Record<CreatureId, number>;
-  let bred = 0;
-  for (const c of CREATURES) {
-    const cs = s.creatures[c.id];
-    amounts[c.id] = cs.bought + cs.bred;
-    if (c.era === 1) bred += cs.bred;
-  }
+  for (const c of CREATURES) amounts[c.id] = run.creatures[c.id].bought + run.creatures[c.id].bred;
   const income = game.income();
   return {
-    era: s.era,
+    era: run.era,
     amounts,
-    queens: game.mods.breeding ? s.queens : 0,
-    bredInsects: bred,
+    defected: run.defected,
+    taming: run.taming,
+    research: run.research,
     tide: game.mods.tide,
-    tideLevel: tideLevel(s.tide.clock),
-    surge: game.mods.tide && s.tide.surgeLeft > 0,
+    tideLevel: tideLevel(run.tide.clock),
+    surge: game.mods.tide && run.tide.surgeLeft > 0,
+    rampage: run.rampageLeft > 0,
     intensity: income.gt(0) ? income.log10() : 0,
+    outcome: run.result ? (run.result.won ? 'won' : 'lost') : 'running',
   };
 }
+
+/** Taming warnings fire once per species per run when the meter passes 70%. */
+const warned = new Set<CreatureId>();
 
 const loop = new GameLoop(game, () => {
   scene.sync(sceneView());
   if (focusEra.value !== scene.focusedEra) focusEra.value = scene.focusedEra;
+  for (const [id, v] of Object.entries(game.run.taming) as [CreatureId, number][]) {
+    if (v > 0.7 && !warned.has(id)) {
+      warned.add(id);
+      pushToast({ title: COPY.toast.taming(CREATURE_BY_ID[id].name) });
+      sfx.deny();
+    }
+  }
 });
 
 function save(): void {
@@ -87,32 +104,44 @@ function save(): void {
 
 function onEvent(e: CoreEvent): void {
   switch (e.type) {
-    case 'eraUnlocked':
-      if (e.era >= 2) {
-        const t = COPY.toast.era[e.era];
-        if (t) pushToast({ ...t, era: e.era }, 5000);
-        sfx.era();
-      }
+    case 'eraUnlocked': {
+      const t = COPY.toast.era[e.era];
+      if (t) pushToast({ ...t, era: e.era }, 5000);
+      sfx.era();
       save();
       break;
-    case 'evolved':
+    }
+    case 'countermeasure':
+      pushToast(COPY.toast.countermeasure(e.name, CLASSES[e.cm.cls].name), 5000);
+      scene.pulse('countermeasure');
+      sfx.deny();
+      break;
+    case 'defected':
+      pushToast(COPY.toast.defected(CREATURE_BY_ID[e.id].name, DOMESTICS[e.domestic].name), 5000);
+      scene.defect(e.id);
+      sfx.deny();
+      save();
+      break;
+    case 'active':
+      if (e.id === 'sabotage' || e.id === 'rescue' || e.id === 'rampage') scene.pulse(e.id);
+      break;
+    case 'runEnded':
       sfx.evolve();
+      if (e.result.won) scene.setForest(true);
+      setTimeout(() => (modal.value = 'result'), e.result.won ? 2200 : 900);
+      save();
+      void leaderboard.submit(game.state, true);
+      break;
+    case 'runStarted':
+      warned.clear();
       flash.value++;
-      scene.rebuildAll();
-      scene.flyTo(game.state.era);
-      focusEra.value = game.state.era;
-      pushToast({ title: COPY.toast.evolved(String(e.gained)), body: NEWS_EVOLVED[e.evolutions % NEWS_EVOLVED.length] }, 5000);
+      scene.reset();
+      scene.flyTo(1);
+      focusEra.value = 1;
       save();
-      void leaderboard.submit(game.state, true);
-      break;
-    case 'ending':
-      sfx.evolve();
-      scene.setForest(true);
-      setTimeout(() => (modal.value = 'ending'), 1800);
-      save();
-      void leaderboard.submit(game.state, true);
       break;
     case 'upgradeBought':
+    case 'skillBought':
       sfx.upgrade();
       break;
     default:
@@ -139,8 +168,7 @@ setApp({
   exportSave: () => exportSave(game.state),
   importSave: (text: string) => {
     try {
-      const state = importSave(text);
-      saveGame(state);
+      saveGame(importSave(text));
       location.reload();
       return true;
     } catch {
@@ -152,10 +180,7 @@ setApp({
     clearGame();
     location.reload();
   },
-  onEndingClosed: () => {
-    scene.setForest(false);
-    pushToast({ title: COPY.toast.rebuilt });
-  },
+  startRun: (route: RouteId, difficulty: Difficulty) => game.startRun(route, difficulty),
   leaderboard,
   sfx,
 });
@@ -169,10 +194,11 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', save);
 
 scene.sync(sceneView());
+if (game.run.result) modal.value = 'result';
 loop.start();
 setInterval(() => frame.value++, 125);
 setInterval(() => {
-  document.title = `${formatMoney(game.state.money)} · ${COPY.title}`;
+  document.title = `${formatMoney(game.run.money)} · ${COPY.title}`;
 }, 2000);
 setInterval(save, 10_000);
 setInterval(() => void leaderboard.submit(game.state), 30_000);

@@ -73,3 +73,42 @@ export const IconDna = (p: P) => (
     <path d="M9 7h6M8.5 11h7" />
   </Svg>
 );
+
+export const IconFlask = (p: P) => (
+  <Svg {...p}>
+    <path d="M9 3h6M10 3v6L4.5 18.5A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.5-2.5L14 9V3" />
+    <path d="M7.5 15h9" />
+  </Svg>
+);
+
+export const IconHeart = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" />
+  </Svg>
+);
+
+export const IconBolt = (p: P) => (
+  <Svg {...p}>
+    <path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />
+  </Svg>
+);
+
+export const IconBomb = (p: P) => (
+  <Svg {...p}>
+    <circle cx="10.5" cy="14" r="6.5" />
+    <path d="m15 9.5 2.5-2.5M17 4l.7 1.6M20.4 6.6l-1.6.7M19.5 3.5l-1 1" />
+  </Svg>
+);
+
+export const IconLock = (p: P) => (
+  <Svg {...p}>
+    <rect x="5" y="11" width="14" height="10" rx="2" />
+    <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+  </Svg>
+);
+
+export const IconCheck = (p: P) => (
+  <Svg {...p}>
+    <path d="m5 12.5 4.5 4.5L19 7.5" />
+  </Svg>
+);

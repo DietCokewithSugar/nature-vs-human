@@ -66,8 +66,49 @@
   --sheet-h: 54dvh;
 }
 
-/* Era accents: a scale per era, consumed via --era-* inside [data-era]. */
+/* Era accents (sky, gold, bronze, iris) and class accents (lime, amber, orange, brown, cyan),
+ * consumed as --era-* inside [data-era] / [data-cls]. Bright scales take dark text on step 9. */
 [data-era='1'] {
+  --era-3: var(--sky-3);
+  --era-4: var(--sky-4);
+  --era-6: var(--sky-6);
+  --era-7: var(--sky-7);
+  --era-9: var(--sky-9);
+  --era-10: var(--sky-10);
+  --era-11: var(--sky-11);
+  --era-on-9: var(--sky-12);
+}
+[data-era='2'] {
+  --era-3: var(--gold-3);
+  --era-4: var(--gold-4);
+  --era-6: var(--gold-6);
+  --era-7: var(--gold-7);
+  --era-9: var(--gold-9);
+  --era-10: var(--gold-10);
+  --era-11: var(--gold-11);
+  --era-on-9: white;
+}
+[data-era='3'] {
+  --era-3: var(--bronze-3);
+  --era-4: var(--bronze-4);
+  --era-6: var(--bronze-6);
+  --era-7: var(--bronze-7);
+  --era-9: var(--bronze-9);
+  --era-10: var(--bronze-10);
+  --era-11: var(--bronze-11);
+  --era-on-9: white;
+}
+[data-era='4'] {
+  --era-3: var(--iris-3);
+  --era-4: var(--iris-4);
+  --era-6: var(--iris-6);
+  --era-7: var(--iris-7);
+  --era-9: var(--iris-9);
+  --era-10: var(--iris-10);
+  --era-11: var(--iris-11);
+  --era-on-9: white;
+}
+[data-cls='assassin'] {
   --era-3: var(--lime-3);
   --era-4: var(--lime-4);
   --era-6: var(--lime-6);
@@ -77,17 +118,27 @@
   --era-11: var(--lime-11);
   --era-on-9: var(--lime-12);
 }
-[data-era='2'] {
-  --era-3: var(--cyan-3);
-  --era-4: var(--cyan-4);
-  --era-6: var(--cyan-6);
-  --era-7: var(--cyan-7);
-  --era-9: var(--cyan-9);
-  --era-10: var(--cyan-10);
-  --era-11: var(--cyan-11);
+[data-cls='swarm'] {
+  --era-3: var(--amber-3);
+  --era-4: var(--amber-4);
+  --era-6: var(--amber-6);
+  --era-7: var(--amber-7);
+  --era-9: var(--amber-9);
+  --era-10: var(--amber-10);
+  --era-11: var(--amber-11);
+  --era-on-9: var(--amber-12);
+}
+[data-cls='hunter'] {
+  --era-3: var(--orange-3);
+  --era-4: var(--orange-4);
+  --era-6: var(--orange-6);
+  --era-7: var(--orange-7);
+  --era-9: var(--orange-9);
+  --era-10: var(--orange-10);
+  --era-11: var(--orange-11);
   --era-on-9: white;
 }
-[data-era='3'] {
+[data-cls='tank'] {
   --era-3: var(--brown-3);
   --era-4: var(--brown-4);
   --era-6: var(--brown-6);
@@ -97,13 +148,25 @@
   --era-11: var(--brown-11);
   --era-on-9: white;
 }
-[data-era='4'] {
-  --era-3: var(--tomato-3);
-  --era-4: var(--tomato-4);
-  --era-6: var(--tomato-6);
-  --era-7: var(--tomato-7);
-  --era-9: var(--tomato-9);
-  --era-10: var(--tomato-10);
-  --era-11: var(--tomato-11);
+[data-cls='marine'] {
+  --era-3: var(--cyan-3);
+  --era-4: var(--cyan-4);
+  --era-6: var(--cyan-6);
+  --era-7: var(--cyan-7);
+  --era-9: var(--cyan-9);
+  --era-10: var(--cyan-10);
+  --era-11: var(--cyan-11);
+  --era-on-9: white;
+}
+[data-cls='general'],
+[data-cls='boosts'],
+[data-cls='meta'] {
+  --era-3: var(--grass-3);
+  --era-4: var(--grass-4);
+  --era-6: var(--grass-6);
+  --era-7: var(--grass-7);
+  --era-9: var(--grass-9);
+  --era-10: var(--grass-10);
+  --era-11: var(--grass-11);
   --era-on-9: white;
 }

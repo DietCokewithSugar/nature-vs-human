@@ -2,10 +2,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
 
-const MIGRATION = readFileSync(
-  new URL('../supabase/migrations/20261106000000_leaderboard.sql', import.meta.url),
-  'utf8',
-);
+const MIGRATION = readFileSync(new URL('../supabase/migrations/20261106000000_leaderboard.sql', import.meta.url), 'utf8');
 
 const ALICE = '00000000-0000-4000-8000-000000000001';
 const BOB = '00000000-0000-4000-8000-000000000002';
@@ -16,22 +13,31 @@ let db: PGlite;
 /** Run as a signed-in player: auth.uid() reads the JWT subject, as on Supabase. */
 async function as<T>(uid: string | null, sql: string, params: unknown[] = []): Promise<T[]> {
   await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [uid ?? '']);
-  const res = await db.query<T>(sql, params);
-  return res.rows;
+  return (await db.query<T>(sql, params)).rows;
 }
 
-const submit = (
-  uid: string,
-  o: { name?: string; log10: number; play: number; dino?: number | null; era?: number; evo?: number; ended?: boolean },
-) =>
-  as(uid, `select public.submit_score($1, $2, $3, $4, $5::smallint, $6, $7)`, [
+interface Submit {
+  name?: string;
+  life: number;
+  best?: number;
+  play: number;
+  runs?: number;
+  wins?: number;
+  normal?: number | null;
+  hard?: number | null;
+}
+
+const submit = (uid: string | null, o: Submit) =>
+  as(uid, `select public.submit_score($1, $2, $3, $4, $5, $6, $7, $8, $9)`, [
     o.name ?? 'tester',
-    o.log10,
+    o.life,
+    o.best ?? Math.min(o.life, 1),
     o.play,
-    o.dino ?? null,
-    o.era ?? 1,
-    o.evo ?? 0,
-    o.ended ?? false,
+    o.runs ?? 0,
+    o.wins ?? 0,
+    o.normal ?? null,
+    o.hard ?? null,
+    null,
   ]);
 
 /** Pretend the player's last update happened `seconds` ago. */
@@ -55,66 +61,69 @@ beforeAll(async () => {
 
 describe('leaderboard SQL', () => {
   it('rejects anonymous callers', async () => {
-    await expect(submit(null as unknown as string, { log10: 1, play: 10 })).rejects.toThrow(/not authenticated/);
+    await expect(submit(null, { life: 1, play: 10 })).rejects.toThrow(/not authenticated/);
   });
 
-  it('inserts a first score and ranks players', async () => {
-    await submit(ALICE, { name: '记仇的蚊子#0001', log10: 5, play: 900 });
-    await submit(BOB, { name: '在逃的章鱼#0002', log10: 7, play: 1800 });
+  it('inserts first scores and ranks players', async () => {
+    await submit(ALICE, { name: '记仇的蚊子#0001', life: 8, best: 8, play: 900, runs: 1 });
+    await submit(BOB, { name: '在逃的章鱼#0002', life: 12, best: 12, play: 1800, runs: 1 });
     const rows = await as<{ rank: number; nickname: string; is_me: boolean }>(ALICE, 'select * from public.leaderboard_lifetime(10)');
     expect(rows.map((r) => r.nickname)).toEqual(['在逃的章鱼#0002', '记仇的蚊子#0001']);
     expect(rows[1]!.is_me).toBe(true);
-    expect(Number(rows[0]!.rank)).toBe(1);
+    const best = await as<{ nickname: string }>(ALICE, 'select * from public.leaderboard_best(10)');
+    expect(best[0]!.nickname).toBe('在逃的章鱼#0002');
   });
 
   it('rate-limits updates but still lets a nickname change through', async () => {
-    await submit(ALICE, { name: '新名字', log10: 6, play: 950 });
-    const [row] = await db.query<{ nickname: string; lifetime_log10: number }>(
+    await submit(ALICE, { name: '新名字', life: 9, play: 950, runs: 1 });
+    const [row] = (await db.query<{ nickname: string; lifetime_log10: number }>(
       `select nickname, lifetime_log10 from public.scores where player_id = $1`,
       [ALICE],
-    ).then((r) => r.rows);
+    )).rows;
     expect(row!.nickname).toBe('新名字');
-    expect(row!.lifetime_log10).toBe(5);
+    expect(row!.lifetime_log10).toBe(8);
   });
 
   it('never credits play time faster than the wall clock', async () => {
     await age(ALICE, 60);
-    // Claims ten extra hours after one real minute: only ~2 minutes are credited.
-    await submit(ALICE, { log10: 6, play: 950 + 36_000 });
+    await submit(ALICE, { life: 9, play: 950 + 36_000, runs: 1 });
     const [row] = (await db.query<{ credited_play_s: number }>(`select credited_play_s from public.scores where player_id = $1`, [ALICE])).rows;
     expect(row!.credited_play_s).toBeLessThan(900 + 130);
-    // ...so a huge score is refused even though the claimed play time would allow it.
     await age(ALICE, 60);
-    await expect(submit(ALICE, { log10: 40, play: 950 + 36_100 })).rejects.toThrow(/implausible score/);
+    await expect(submit(ALICE, { life: 200, play: 950 + 36_100, runs: 1 })).rejects.toThrow(/implausible score/);
   });
 
   it('refuses edited saves on first contact', async () => {
-    await expect(submit(CAROL, { log10: 120, play: 999_999 })).rejects.toThrow(/implausible score/);
+    await expect(submit(CAROL, { life: 400, play: 999_999 })).rejects.toThrow(/implausible score/);
   });
 
-  it('keeps the best lifetime and the fastest dino time', async () => {
+  it('keeps the best values and the fastest win per difficulty', async () => {
     await age(BOB, 7200);
-    await submit(BOB, { log10: 18, play: 1800 + 7000, dino: 5400, era: 4 });
+    await submit(BOB, { life: 21, best: 21, play: 1800 + 3600, runs: 2, wins: 1, normal: 3100 });
     await age(BOB, 60);
-    await submit(BOB, { log10: 12, play: 1800 + 7050, dino: 6000, era: 4 });
-    const [row] = (await db.query<{ lifetime_log10: number; dino_time_s: number; best_era: number }>(
-      `select lifetime_log10, dino_time_s, best_era from public.scores where player_id = $1`,
+    await submit(BOB, { life: 21.2, best: 20, play: 1800 + 3650, runs: 3, wins: 2, normal: 3400, hard: 3600 });
+    const [row] = (await db.query<{ best_run_log10: number; fastest_normal_s: number; fastest_hard_s: number; wins: number }>(
+      `select best_run_log10, fastest_normal_s, fastest_hard_s, wins from public.scores where player_id = $1`,
       [BOB],
     )).rows;
-    expect(row!.lifetime_log10).toBe(18);
-    expect(Number(row!.dino_time_s)).toBe(5400);
-    expect(row!.best_era).toBe(4);
-    const speed = await as<{ nickname: string; value: number }>(CAROL, 'select * from public.leaderboard_speedrun(10)');
-    expect(speed).toHaveLength(1);
-    expect(speed[0]!.value).toBe(5400);
+    expect(row!.best_run_log10).toBe(21);
+    expect(row!.fastest_normal_s).toBe(3100);
+    expect(row!.fastest_hard_s).toBe(3600);
+    expect(row!.wins).toBe(2);
+    const fast = await as<{ value: number }>(CAROL, `select * from public.leaderboard_fastest('normal', 10)`);
+    expect(fast).toHaveLength(1);
+    expect(fast[0]!.value).toBe(3100);
+    expect(await as(CAROL, `select * from public.leaderboard_fastest('brutal', 10)`)).toHaveLength(0);
   });
 
-  it('rejects impossible dino times and bad input', async () => {
+  it('rejects impossible wins and bad input', async () => {
     await age(BOB, 60);
-    await expect(submit(BOB, { log10: 18, play: 9000, dino: 60, era: 4 })).rejects.toThrow(/dino/);
-    await expect(submit(BOB, { name: '', log10: 1, play: 9000 })).rejects.toThrow(/nickname/);
-    await expect(submit(BOB, { name: 'x'.repeat(21), log10: 1, play: 9000 })).rejects.toThrow(/nickname/);
-    await expect(submit(BOB, { log10: -1, play: 9000 })).rejects.toThrow(/invalid score/);
+    await expect(submit(BOB, { life: 21, play: 9000, runs: 3, wins: 2, normal: 300 })).rejects.toThrow(/win time/);
+    await expect(submit(BOB, { life: 21, play: 9000, runs: 3, wins: 0, normal: 3000 })).rejects.toThrow(/win time/);
+    await expect(submit(BOB, { life: 21, play: 9000, runs: 1, wins: 2 })).rejects.toThrow(/invalid progress/);
+    await expect(submit(BOB, { life: 5, best: 9, play: 9000 })).rejects.toThrow(/invalid score/);
+    await expect(submit(BOB, { name: '', life: 1, play: 9000 })).rejects.toThrow(/nickname/);
+    await expect(submit(BOB, { name: 'x'.repeat(21), life: 1, play: 9000 })).rejects.toThrow(/nickname/);
   });
 
   it('blocks direct table access for client roles', async () => {
@@ -123,8 +132,9 @@ describe('leaderboard SQL', () => {
     await db.exec('reset role');
   });
 
-  it('plausibility curve stays above the fastest simulated player', async () => {
-    const [row] = (await db.query<{ v: number }>('select public.max_plausible_log10(10.6) as v')).rows;
-    expect(row!.v).toBeGreaterThan(30);
+  it('plausibility curve stays above the fastest simulated runs', async () => {
+    // A 1e23 bill in about 34 minutes, the fastest the bots manage.
+    const [row] = (await db.query<{ v: number }>('select public.max_plausible_log10(34 / 60.0) as v')).rows;
+    expect(row!.v).toBeGreaterThan(23);
   });
 });

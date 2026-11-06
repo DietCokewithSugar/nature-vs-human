@@ -1,14 +1,14 @@
 import { signal } from '@preact/signals';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { GameState } from '../core/index.ts';
+import type { Difficulty, GameState } from '../core/index.ts';
 import { loadPlayer, savePlayer } from './storage.ts';
 
-export type BoardKind = 'lifetime' | 'speedrun';
+export type BoardKind = 'lifetime' | 'best' | 'fastest';
 
 export interface LeaderEntry {
   rank: number;
   nickname: string;
-  /** log10 of lifetime damage, or seconds to reach the dinosaur era. */
+  /** log10 of damage (lifetime or best run), or seconds for the fastest win. */
   value: number;
   me: boolean;
 }
@@ -43,7 +43,7 @@ export class Leaderboard {
   private config: { url: string; key: string } | null = null;
   private loading: Promise<SupabaseClient | null> | null = null;
   private sessionReady: Promise<boolean> | null = null;
-  private lastSent = { log10: -1, at: 0, dino: null as number | null, era: 0 };
+  private lastSent = { log10: -1, at: 0, runs: -1 };
 
   constructor(url?: string, anonKey?: string) {
     const player = loadPlayer() ?? { nickname: randomNickname() };
@@ -103,26 +103,29 @@ export class Leaderboard {
   /** Push progress. Cheap to call often: it skips when nothing meaningful changed. */
   async submit(state: GameState, force = false): Promise<void> {
     if (!this.config) return;
-    const log10 = state.lifetimeEarned.gt(0) ? state.lifetimeEarned.log10() : 0;
+    const meta = state.meta;
+    const log10 = meta.lifetime.gt(0) ? meta.lifetime.log10() : 0;
     const now = Date.now();
-    const changed =
-      log10 - this.lastSent.log10 > 0.005 || state.dinoAt !== this.lastSent.dino || state.bestEra !== this.lastSent.era;
+    const changed = log10 - this.lastSent.log10 > 0.005 || meta.runs !== this.lastSent.runs;
     if (!force && (!changed || now - this.lastSent.at < 60_000)) return;
     if (!(await this.ensureSession()) || !this.client) return;
+    const fastest = (d: 'normal' | 'hard' | 'brutal') => (meta.fastest[d] === null ? null : Math.floor(meta.fastest[d]!));
     const { error } = await this.client.rpc('submit_score', {
       p_nickname: this.nickname.value,
       p_lifetime_log10: log10,
-      p_play_time_s: Math.floor(state.playTime),
-      p_dino_time_s: state.dinoAt === null ? null : Math.floor(state.dinoAt),
-      p_best_era: state.bestEra,
-      p_evolutions: state.evolutions,
-      p_ended: state.endedAt !== null,
+      p_best_run_log10: meta.bestRunLog10,
+      p_play_time_s: Math.floor(meta.playTime),
+      p_runs: meta.runs,
+      p_wins: meta.wins.normal + meta.wins.hard + meta.wins.brutal,
+      p_fastest_normal_s: fastest('normal'),
+      p_fastest_hard_s: fastest('hard'),
+      p_fastest_brutal_s: fastest('brutal'),
     });
     if (error) {
       console.warn('Score submit rejected', error.message);
       return;
     }
-    this.lastSent = { log10, at: now, dino: state.dinoAt, era: state.bestEra };
+    this.lastSent = { log10, at: now, runs: meta.runs };
   }
 
   async setNickname(name: string, state: GameState): Promise<boolean> {
@@ -134,12 +137,14 @@ export class Leaderboard {
     return true;
   }
 
-  async fetch(kind: BoardKind, limit = 50): Promise<BoardResult | null> {
+  async fetch(kind: BoardKind, difficulty: Difficulty = 'normal', limit = 50): Promise<BoardResult | null> {
     if (!(await this.ensureSession()) || !this.client) return null;
     this.status.value = 'busy';
     try {
-      const fn = kind === 'lifetime' ? 'leaderboard_lifetime' : 'leaderboard_speedrun';
-      const { data, error } = await this.client.rpc(fn, { p_limit: limit });
+      const { data, error } =
+        kind === 'fastest'
+          ? await this.client.rpc('leaderboard_fastest', { p_difficulty: difficulty, p_limit: limit })
+          : await this.client.rpc(kind === 'lifetime' ? 'leaderboard_lifetime' : 'leaderboard_best', { p_limit: limit });
       if (error) throw error;
       const rows = (data ?? []) as { rank: number; nickname: string; value: number; is_me: boolean }[];
       const entries: LeaderEntry[] = rows.map((r) => ({
