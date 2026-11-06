@@ -1,0 +1,312 @@
+{
+  "source": {
+    "name": "Polyfork",
+    "home": "https://polyfork.dev",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "assetPage": "https://polyfork.dev/asset/{slug}",
+    "download": "https://polyfork.dev/cdn/{slug}.glb"
+  },
+  "assets": [
+    {
+      "name": "ant",
+      "slug": "wood-ant-base",
+      "title": "Wood ant"
+    },
+    {
+      "name": "grasshopper",
+      "slug": "meadow-grasshopper-base",
+      "title": "Meadow grasshopper"
+    },
+    {
+      "name": "wasp",
+      "slug": "common-wasp-base",
+      "title": "Common wasp"
+    },
+    {
+      "name": "beetle",
+      "slug": "stag-beetle-base",
+      "title": "Stag beetle"
+    },
+    {
+      "name": "mantis",
+      "slug": "praying-mantis-base",
+      "title": "Praying mantis"
+    },
+    {
+      "name": "queen",
+      "slug": "ant-queen-base",
+      "title": "Ant queen"
+    },
+    {
+      "name": "crab",
+      "slug": "shore-crab-base",
+      "title": "Shore crab"
+    },
+    {
+      "name": "jellyfish",
+      "slug": "jellyfish-base",
+      "title": "Jellyfish"
+    },
+    {
+      "name": "eel",
+      "slug": "moray-eel-base",
+      "title": "Moray eel"
+    },
+    {
+      "name": "octopus",
+      "slug": "octopus-base",
+      "title": "Octopus"
+    },
+    {
+      "name": "shark",
+      "slug": "reef-shark-base",
+      "title": "Reef shark"
+    },
+    {
+      "name": "rat",
+      "slug": "rat-base",
+      "title": "Rat"
+    },
+    {
+      "name": "pigeon",
+      "slug": "pigeon-base",
+      "title": "Pigeon"
+    },
+    {
+      "name": "fox",
+      "slug": "fox-base",
+      "title": "Fox"
+    },
+    {
+      "name": "bear",
+      "slug": "bear-base",
+      "title": "Bear"
+    },
+    {
+      "name": "elephant",
+      "slug": "elephant-base",
+      "title": "Elephant"
+    },
+    {
+      "name": "raptor",
+      "slug": "velociraptor-base",
+      "title": "Velociraptor"
+    },
+    {
+      "name": "pteranodon",
+      "slug": "pteranodon-base",
+      "title": "Pteranodon"
+    },
+    {
+      "name": "triceratops",
+      "slug": "triceratops-base",
+      "title": "Triceratops"
+    },
+    {
+      "name": "brachiosaurus",
+      "slug": "brachiosaurus-base",
+      "title": "Brachiosaurus"
+    },
+    {
+      "name": "trex",
+      "slug": "tyrannosaurus-base",
+      "title": "Tyrannosaurus"
+    },
+    {
+      "name": "cabin",
+      "slug": "porch-log-cabin-d2f3ef",
+      "title": "Porch Log Cabin"
+    },
+    {
+      "name": "house-aframe",
+      "slug": "a-frame-cabin-6cb550",
+      "title": "A-Frame Cabin"
+    },
+    {
+      "name": "cottage",
+      "slug": "crossing-keeper-s-cottage-de49a4",
+      "title": "Crossing Keeper's Cottage"
+    },
+    {
+      "name": "chalet",
+      "slug": "alpine-chalet-47d59e",
+      "title": "Alpine Chalet"
+    },
+    {
+      "name": "clubhouse",
+      "slug": "clubhouse-8570d2",
+      "title": "Clubhouse"
+    },
+    {
+      "name": "row-house",
+      "slug": "brownstone-row-house-1b84fd",
+      "title": "Brownstone Row House"
+    },
+    {
+      "name": "corner-shop",
+      "slug": "corner-shop-5aec8c",
+      "title": "Corner Shop"
+    },
+    {
+      "name": "boat-shed",
+      "slug": "boat-shed-74c94f",
+      "title": "Boat Shed"
+    },
+    {
+      "name": "lifeguard-tower",
+      "slug": "lifeguard-tower-183c37",
+      "title": "Lifeguard Tower"
+    },
+    {
+      "name": "lighthouse",
+      "slug": "old-lighthouse-48ca6c",
+      "title": "Old Lighthouse"
+    },
+    {
+      "name": "beach-cafe",
+      "slug": "beach-cafe-kiosk-9e8f6d",
+      "title": "Beach Cafe Kiosk"
+    },
+    {
+      "name": "yard-crane",
+      "slug": "yard-crane-316e4a",
+      "title": "Yard Crane"
+    },
+    {
+      "name": "fishing-boat",
+      "slug": "small-fishing-boat-4ac0e3",
+      "title": "Small Fishing Boat"
+    },
+    {
+      "name": "barge",
+      "slug": "dock-cargo-barge-69dc4b",
+      "title": "Dock Cargo Barge"
+    },
+    {
+      "name": "sailboat",
+      "slug": "sailboat-3ee283",
+      "title": "Sailboat"
+    },
+    {
+      "name": "container",
+      "slug": "cargo-container-fd73bc",
+      "title": "Cargo Container"
+    },
+    {
+      "name": "tenement",
+      "slug": "brick-tenement-7d2014",
+      "title": "Brick Tenement"
+    },
+    {
+      "name": "corner-tenement",
+      "slug": "corner-tenement-92fb62",
+      "title": "Corner Tenement"
+    },
+    {
+      "name": "department-store",
+      "slug": "department-store-ffbd58",
+      "title": "Department Store"
+    },
+    {
+      "name": "parking-garage",
+      "slug": "parking-garage-6e4f2c",
+      "title": "Parking Garage"
+    },
+    {
+      "name": "apartment",
+      "slug": "prewar-apartment-house-1081a6",
+      "title": "Prewar Apartment House"
+    },
+    {
+      "name": "loft",
+      "slug": "cast-iron-loft-b04b5a",
+      "title": "Cast Iron Loft"
+    },
+    {
+      "name": "fire-station",
+      "slug": "fire-station-e2b756",
+      "title": "Fire Station"
+    },
+    {
+      "name": "diner",
+      "slug": "street-diner-40fc87",
+      "title": "Street Diner"
+    },
+    {
+      "name": "office-tower",
+      "slug": "office-tower-1538cc",
+      "title": "Office Tower"
+    },
+    {
+      "name": "deco-tower",
+      "slug": "art-deco-setback-tower-b3a788",
+      "title": "Art Deco Setback Tower"
+    },
+    {
+      "name": "slab",
+      "slug": "postwar-apartment-slab-cee5f9",
+      "title": "Postwar Apartment Slab"
+    },
+    {
+      "name": "bank",
+      "slug": "classical-bank-04954e",
+      "title": "Classical Bank"
+    },
+    {
+      "name": "hotel",
+      "slug": "hotel-b43f66",
+      "title": "Hotel"
+    },
+    {
+      "name": "airliner",
+      "slug": "narrow-body-airliner-619183",
+      "title": "Narrow-Body Airliner"
+    },
+    {
+      "name": "tree-oak",
+      "slug": "oak-tree-50ee7c",
+      "title": "Oak Tree"
+    },
+    {
+      "name": "tree-birch",
+      "slug": "birch-tree-181b33",
+      "title": "Birch Tree"
+    },
+    {
+      "name": "tree-pine",
+      "slug": "tall-pine-tree-ab4108",
+      "title": "Tall Pine Tree"
+    },
+    {
+      "name": "tree-broadleaf",
+      "slug": "broadleaf-oak-997c22",
+      "title": "Broadleaf Oak"
+    },
+    {
+      "name": "tree-street",
+      "slug": "street-tree-0d33f3",
+      "title": "Street Tree"
+    },
+    {
+      "name": "bush",
+      "slug": "round-bush-cd2ac0",
+      "title": "Round Bush"
+    },
+    {
+      "name": "street-lamp",
+      "slug": "street-lamp-29f365",
+      "title": "Street Lamp"
+    },
+    {
+      "name": "pickup",
+      "slug": "pickup-truck-a34bf2",
+      "title": "Pickup Truck"
+    },
+    {
+      "name": "coupe",
+      "slug": "wheeled-city-coupe-5c381e",
+      "title": "Wheeled City Coupe"
+    }
+  ]
+}

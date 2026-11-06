@@ -1,0 +1,10 @@
+# Supabase CLI settings for local development (`supabase start`).
+# Hosted projects: enable anonymous sign-ins in the dashboard as well (see README).
+project_id = "human-bill"
+
+[api]
+schemas = ["public"]
+
+[auth]
+enable_signup = true
+enable_anonymous_sign_ins = true

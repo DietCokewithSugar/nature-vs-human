@@ -1,0 +1,109 @@
+/*
+ * Design tokens. Every colour is a Radix Colors step (light theme only).
+ * Radix step roles:
+ *   1–2  app / subtle backgrounds      3–5  component backgrounds (rest / hover / pressed)
+ *   6–8  borders (subtle / default / hover + focus)   9–10 solid fills (rest / hover)
+ *   11   low-contrast text             12   high-contrast text
+ * Bright scales (lime, amber, sky) take dark text on step 9; the rest take white.
+ */
+:root {
+  /* Surfaces */
+  --app-bg-top: var(--sky-4);
+  --app-bg-bottom: var(--olive-2);
+  --surface: var(--white-a11);
+  --surface-solid: var(--olive-1);
+  --surface-sunken: var(--olive-a2);
+  --surface-hover: var(--olive-a3);
+  --surface-pressed: var(--olive-a4);
+  --border-subtle: var(--olive-a5);
+  --border: var(--olive-a6);
+  --border-strong: var(--olive-a7);
+  --focus: var(--grass-8);
+
+  /* Text */
+  --text: var(--olive-12);
+  --text-muted: var(--olive-11);
+  --text-on-solid: white;
+  --text-inverse: var(--olive-1);
+
+  /* Accents */
+  --brand: var(--grass-9);
+  --brand-hover: var(--grass-10);
+  --brand-text: var(--grass-11);
+  --money: var(--amber-11);
+  --danger: var(--tomato-9);
+  --danger-hover: var(--tomato-10);
+  --danger-soft: var(--tomato-3);
+  --danger-text: var(--tomato-11);
+
+  /* Shadows (Radix black alpha) */
+  --shadow-1: 0 1px 2px var(--black-a1), 0 1px 1px var(--black-a1);
+  --shadow-2: 0 2px 6px var(--black-a1), 0 10px 28px var(--black-a2);
+  --shadow-3: 0 12px 40px var(--black-a3);
+
+  /*
+   * Concentric radii: an inner radius is the outer radius minus the padding between them,
+   * so nested corners share one centre.
+   */
+  --r-panel: 22px;
+  --p-panel: 8px;
+  --r-card: calc(var(--r-panel) - var(--p-panel)); /* 14 */
+  --p-card: 6px;
+  --r-control: calc(var(--r-card) - var(--p-card)); /* 8 */
+  --r-modal: 26px;
+  --p-modal: 10px;
+  --r-modal-card: calc(var(--r-modal) - var(--p-modal)); /* 16 */
+  --seg-pad: 3px;
+  --r-seg: calc(var(--r-card) - var(--seg-pad)); /* 11 */
+
+  /* Type */
+  --font-ui: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
+  --font-display: 'ZCOOL KuaiLe', var(--font-ui);
+  --font-num: 'Fredoka Variable', 'Fredoka', var(--font-ui);
+
+  --gap: 8px;
+  --panel-w: 392px;
+  --sheet-h: 54dvh;
+}
+
+/* Era accents: a scale per era, consumed via --era-* inside [data-era]. */
+[data-era='1'] {
+  --era-3: var(--lime-3);
+  --era-4: var(--lime-4);
+  --era-6: var(--lime-6);
+  --era-7: var(--lime-7);
+  --era-9: var(--lime-9);
+  --era-10: var(--lime-10);
+  --era-11: var(--lime-11);
+  --era-on-9: var(--lime-12);
+}
+[data-era='2'] {
+  --era-3: var(--cyan-3);
+  --era-4: var(--cyan-4);
+  --era-6: var(--cyan-6);
+  --era-7: var(--cyan-7);
+  --era-9: var(--cyan-9);
+  --era-10: var(--cyan-10);
+  --era-11: var(--cyan-11);
+  --era-on-9: white;
+}
+[data-era='3'] {
+  --era-3: var(--brown-3);
+  --era-4: var(--brown-4);
+  --era-6: var(--brown-6);
+  --era-7: var(--brown-7);
+  --era-9: var(--brown-9);
+  --era-10: var(--brown-10);
+  --era-11: var(--brown-11);
+  --era-on-9: white;
+}
+[data-era='4'] {
+  --era-3: var(--tomato-3);
+  --era-4: var(--tomato-4);
+  --era-6: var(--tomato-6);
+  --era-7: var(--tomato-7);
+  --era-9: var(--tomato-9);
+  --era-10: var(--tomato-10);
+  --era-11: var(--tomato-11);
+  --era-on-9: white;
+}

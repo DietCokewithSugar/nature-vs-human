@@ -1,0 +1,16 @@
+export * from './bignum.ts';
+export * from './types.ts';
+export * from './state.ts';
+export * from './economy.ts';
+export * from './progression.ts';
+export * from './format.ts';
+export * from './save.ts';
+export { Game, type CoreEvent, type BuyAmount } from './game.ts';
+export { computeMods, type Mods } from './modifiers.ts';
+export { tideLevel, tideMult, canSurge } from './mechanics/tide.ts';
+export { breedRate, queenCost } from './mechanics/breeding.ts';
+export { BALANCE } from './config/balance.ts';
+export { CREATURES, CREATURE_BY_ID, CREATURE_IDS, creaturesOfEra, type CreatureDef } from './config/creatures.ts';
+export { ERAS, type EraDef } from './config/eras.ts';
+export { UPGRADES, UPGRADE_BY_ID } from './config/upgrades.ts';
+export { GENE_UPGRADES, GENE_BY_ID } from './config/genes.ts';
