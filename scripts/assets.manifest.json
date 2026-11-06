@@ -1,0 +1,382 @@
+{
+  "source": {
+    "name": "Polyfork",
+    "home": "https://polyfork.dev",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "assetPage": "https://polyfork.dev/asset/{slug}",
+    "download": "https://polyfork.dev/cdn/{slug}.glb"
+  },
+  "assets": [
+    {
+      "name": "ant",
+      "slug": "wood-ant-base",
+      "title": "Wood ant"
+    },
+    {
+      "name": "grasshopper",
+      "slug": "meadow-grasshopper-base",
+      "title": "Meadow grasshopper"
+    },
+    {
+      "name": "wasp",
+      "slug": "common-wasp-base",
+      "title": "Common wasp"
+    },
+    {
+      "name": "rat",
+      "slug": "rat-base",
+      "title": "Rat"
+    },
+    {
+      "name": "pigeon",
+      "slug": "pigeon-base",
+      "title": "Pigeon"
+    },
+    {
+      "name": "octopus",
+      "slug": "octopus-base",
+      "title": "Octopus"
+    },
+    {
+      "name": "shark",
+      "slug": "reef-shark-base",
+      "title": "Reef shark"
+    },
+    {
+      "name": "elephant",
+      "slug": "elephant-base",
+      "title": "Elephant"
+    },
+    {
+      "name": "tenement",
+      "slug": "brick-tenement-7d2014",
+      "title": "Brick Tenement"
+    },
+    {
+      "name": "corner-tenement",
+      "slug": "corner-tenement-92fb62",
+      "title": "Corner Tenement"
+    },
+    {
+      "name": "loft",
+      "slug": "cast-iron-loft-b04b5a",
+      "title": "Cast Iron Loft"
+    },
+    {
+      "name": "boat-shed",
+      "slug": "boat-shed-74c94f",
+      "title": "Boat Shed"
+    },
+    {
+      "name": "lighthouse",
+      "slug": "old-lighthouse-48ca6c",
+      "title": "Old Lighthouse"
+    },
+    {
+      "name": "yard-crane",
+      "slug": "yard-crane-316e4a",
+      "title": "Yard Crane"
+    },
+    {
+      "name": "barge",
+      "slug": "dock-cargo-barge-69dc4b",
+      "title": "Dock Cargo Barge"
+    },
+    {
+      "name": "container",
+      "slug": "cargo-container-fd73bc",
+      "title": "Cargo Container"
+    },
+    {
+      "name": "fishing-boat",
+      "slug": "small-fishing-boat-4ac0e3",
+      "title": "Small Fishing Boat"
+    },
+    {
+      "name": "office-tower",
+      "slug": "office-tower-1538cc",
+      "title": "Office Tower"
+    },
+    {
+      "name": "deco-tower",
+      "slug": "art-deco-setback-tower-b3a788",
+      "title": "Art Deco Setback Tower"
+    },
+    {
+      "name": "slab",
+      "slug": "postwar-apartment-slab-cee5f9",
+      "title": "Postwar Apartment Slab"
+    },
+    {
+      "name": "bank",
+      "slug": "classical-bank-04954e",
+      "title": "Classical Bank"
+    },
+    {
+      "name": "hotel",
+      "slug": "hotel-b43f66",
+      "title": "Hotel"
+    },
+    {
+      "name": "department-store",
+      "slug": "department-store-ffbd58",
+      "title": "Department Store"
+    },
+    {
+      "name": "parking-garage",
+      "slug": "parking-garage-6e4f2c",
+      "title": "Parking Garage"
+    },
+    {
+      "name": "airliner",
+      "slug": "narrow-body-airliner-619183",
+      "title": "Narrow-Body Airliner"
+    },
+    {
+      "name": "tree-oak",
+      "slug": "oak-tree-50ee7c",
+      "title": "Oak Tree"
+    },
+    {
+      "name": "tree-birch",
+      "slug": "birch-tree-181b33",
+      "title": "Birch Tree"
+    },
+    {
+      "name": "tree-pine",
+      "slug": "tall-pine-tree-ab4108",
+      "title": "Tall Pine Tree"
+    },
+    {
+      "name": "tree-broadleaf",
+      "slug": "broadleaf-oak-997c22",
+      "title": "Broadleaf Oak"
+    },
+    {
+      "name": "tree-street",
+      "slug": "street-tree-0d33f3",
+      "title": "Street Tree"
+    },
+    {
+      "name": "bush",
+      "slug": "round-bush-cd2ac0",
+      "title": "Round Bush"
+    },
+    {
+      "name": "street-lamp",
+      "slug": "street-lamp-29f365",
+      "title": "Street Lamp"
+    },
+    {
+      "name": "pickup",
+      "slug": "pickup-truck-a34bf2",
+      "title": "Pickup Truck"
+    },
+    {
+      "name": "coupe",
+      "slug": "wheeled-city-coupe-5c381e",
+      "title": "Wheeled City Coupe"
+    },
+    {
+      "name": "wolf",
+      "slug": "wolf-base",
+      "title": "Wolf"
+    },
+    {
+      "name": "cat",
+      "slug": "cat-base",
+      "title": "Cat"
+    },
+    {
+      "name": "bear",
+      "slug": "bear-base",
+      "title": "Bear"
+    },
+    {
+      "name": "pig",
+      "slug": "pig-base",
+      "title": "Pig"
+    },
+    {
+      "name": "crocodile",
+      "slug": "crocodile-base",
+      "title": "Crocodile"
+    },
+    {
+      "name": "ox",
+      "slug": "ox-base",
+      "title": "Ox"
+    },
+    {
+      "name": "crow",
+      "slug": "crow-base",
+      "title": "Crow"
+    },
+    {
+      "name": "dog",
+      "slug": "dog-base",
+      "title": "Dog"
+    },
+    {
+      "name": "hunter-1",
+      "slug": "farmer-363820",
+      "title": "Farmer (straw cloak)"
+    },
+    {
+      "name": "hunter-2",
+      "slug": "ashigaru-foot-soldier-806707",
+      "title": "Ashigaru Foot Soldier"
+    },
+    {
+      "name": "hunter-3",
+      "slug": "sheriff-986181",
+      "title": "Sheriff"
+    },
+    {
+      "name": "hunter-4",
+      "slug": "park-ranger-c1697e",
+      "title": "Park Ranger"
+    },
+    {
+      "name": "scientist",
+      "slug": "senior-scientist-631736",
+      "title": "Senior Scientist"
+    },
+    {
+      "name": "spear",
+      "slug": "spear-e9824e",
+      "title": "Spear"
+    },
+    {
+      "name": "lean-to",
+      "slug": "lean-to-shelter-f0709f",
+      "title": "Lean-To Shelter"
+    },
+    {
+      "name": "dugout",
+      "slug": "timber-dugout-shelter-bbb56d",
+      "title": "Timber Dugout Shelter"
+    },
+    {
+      "name": "hide-rack",
+      "slug": "laced-hide-stretching-rack-8152a1",
+      "title": "Laced Hide Stretching Rack"
+    },
+    {
+      "name": "larder",
+      "slug": "ventilated-hide-food-larder-f53174",
+      "title": "Ventilated Hide Food Larder"
+    },
+    {
+      "name": "totem",
+      "slug": "bone-warning-totem-56cf4a",
+      "title": "Bone Warning Totem"
+    },
+    {
+      "name": "campfire",
+      "slug": "stone-ring-campfire-8a0c6f",
+      "title": "Stone Ring Campfire"
+    },
+    {
+      "name": "spruce",
+      "slug": "snow-laden-spruce-36716e",
+      "title": "Snow-Laden Spruce"
+    },
+    {
+      "name": "boulders",
+      "slug": "boulder-field-cluster-08e364",
+      "title": "Boulder Field Cluster"
+    },
+    {
+      "name": "petroglyph",
+      "slug": "petroglyph-boulder-7203c3",
+      "title": "Petroglyph Boulder"
+    },
+    {
+      "name": "fleshing",
+      "slug": "hide-fleshing-workstation-36c93e",
+      "title": "Hide Fleshing Workstation"
+    },
+    {
+      "name": "gatehouse",
+      "slug": "castle-gatehouse-4ed5c6",
+      "title": "Castle Gatehouse"
+    },
+    {
+      "name": "temple",
+      "slug": "buddhist-temple-hall-f0aa09",
+      "title": "Buddhist Temple Hall"
+    },
+    {
+      "name": "pagoda",
+      "slug": "tiered-pagoda-f4ade0",
+      "title": "Tiered Pagoda"
+    },
+    {
+      "name": "townhouse",
+      "slug": "machiya-townhouse-8ef64e",
+      "title": "Machiya Townhouse"
+    },
+    {
+      "name": "storehouse",
+      "slug": "kura-storehouse-5c9631",
+      "title": "Kura Storehouse"
+    },
+    {
+      "name": "farmhouse",
+      "slug": "minka-farmhouse-680475",
+      "title": "Minka Farmhouse"
+    },
+    {
+      "name": "market",
+      "slug": "market-stall-94937d",
+      "title": "Market Stall"
+    },
+    {
+      "name": "well",
+      "slug": "stone-well-b2dfcd",
+      "title": "Stone Well"
+    },
+    {
+      "name": "bell-tower",
+      "slug": "temple-bell-tower-745387",
+      "title": "Temple Bell Tower"
+    },
+    {
+      "name": "maple",
+      "slug": "japanese-maple-d2fb29",
+      "title": "Japanese Maple"
+    },
+    {
+      "name": "sakura",
+      "slug": "cherry-blossom-tree-3f7ab7",
+      "title": "Cherry Blossom Tree"
+    },
+    {
+      "name": "river-boat",
+      "slug": "flat-river-boat-6bac37",
+      "title": "Flat River Boat"
+    },
+    {
+      "name": "boiler-hall",
+      "slug": "riveted-boiler-hall-da0c09",
+      "title": "Riveted Boiler Hall"
+    },
+    {
+      "name": "warehouse",
+      "slug": "brick-depot-warehouse-3dd642",
+      "title": "Brick Depot Warehouse"
+    },
+    {
+      "name": "water-tower",
+      "slug": "water-tower-7eb7ec",
+      "title": "Water Tower"
+    },
+    {
+      "name": "silo",
+      "slug": "grain-silo-58ca67",
+      "title": "Grain Silo"
+    }
+  ]
+}

@@ -1,0 +1,450 @@
+import type { ComponentChildren } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
+import {
+  D,
+  DIFFICULTIES,
+  DIFFICULTY_GATE,
+  DIFFICULTY_NAMES,
+  ROUTES,
+  difficultyUnlocked,
+  formatDuration,
+  metaMods,
+  type Difficulty,
+  type RouteId,
+} from '../core/index.ts';
+import credits from '../data/credits.json';
+import { NICKNAME_MAX, type BoardKind, type BoardResult } from '../data/leaderboard.ts';
+import { IconButton, Money, Segmented } from './common.tsx';
+import { COPY } from './copy.ts';
+import { describeEffects } from './describe.ts';
+import { IconClose, IconLock } from './icons.tsx';
+import { app, flash, floats, modal, pushToast, tab, toasts } from './store.ts';
+
+export function Toasts() {
+  return (
+    <div class="toasts" role="status" aria-live="polite">
+      {toasts.value.map((t) => (
+        <div key={t.id} class="toast" data-era={t.era}>
+          <div class="toast-title">{t.title}</div>
+          {t.body && <div class="toast-body">{t.body}</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function Floats() {
+  return (
+    <div class="floats" aria-hidden="true">
+      {floats.value.map((f) => (
+        <span key={f.id} class="float" style={{ left: `${f.x}px`, top: `${f.y}px` }}>
+          {f.text}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+export function Flash() {
+  const n = flash.value;
+  if (!n) return null;
+  return <div key={n} class="flash" aria-hidden="true" />;
+}
+
+function Modal({ title, children, onClose, wide }: { title: string; children: ComponentChildren; onClose?: () => void; wide?: boolean }) {
+  const close = onClose ?? (() => (modal.value = null));
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close();
+    window.addEventListener('keydown', onKey);
+    ref.current?.focus();
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  return (
+    <div class="overlay" onClick={(e) => e.target === e.currentTarget && close()}>
+      <div class={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
+        <header class="modal-head">
+          <h2>{title}</h2>
+          <IconButton label="关闭" class="icon-btn ghost" onClick={close}>
+            <IconClose />
+          </IconButton>
+        </header>
+        <div class="modal-body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+export function Modals() {
+  switch (modal.value) {
+    case 'leaderboard':
+      return <LeaderboardModal />;
+    case 'settings':
+      return <SettingsModal />;
+    case 'setup':
+      return <SetupModal />;
+    case 'result':
+      return <ResultModal />;
+    default:
+      return null;
+  }
+}
+
+// ── New run ─────────────────────────────────────────────────────
+
+function SetupModal() {
+  const g = app.game;
+  const m = metaMods(g.meta);
+  const [route, setRoute] = useState<RouteId>(g.run.route);
+  const [difficulty, setDifficulty] = useState<Difficulty>(difficultyUnlocked(g.meta, g.run.difficulty) ? g.run.difficulty : 'normal');
+  const abandoning = g.running && g.run.time > 30;
+  return (
+    <Modal title={COPY.setup.title}>
+      <div class="section-label">
+        <span>{COPY.setup.route}</span>
+      </div>
+      <div class="card choices">
+        {(Object.keys(ROUTES) as RouteId[]).map((id) => {
+          const r = ROUTES[id];
+          const open = m.routesUnlocked[id];
+          return (
+            <button
+              type="button"
+              key={id}
+              class="choice"
+              aria-pressed={route === id}
+              disabled={!open}
+              onClick={() => setRoute(id)}
+            >
+              <span class="name">{r.name}</span>
+              <span class="effect">{open ? describeEffects(r.effects) || COPY.setup.balanced : COPY.setup.locked}</span>
+              {!open && <IconLock class="choice-lock" />}
+            </button>
+          );
+        })}
+      </div>
+      <div class="section-label">
+        <span>{COPY.setup.difficulty}</span>
+      </div>
+      <div class="card choices row3">
+        {DIFFICULTIES.map((d) => {
+          const open = difficultyUnlocked(g.meta, d);
+          const gate = DIFFICULTY_GATE[d];
+          return (
+            <button type="button" key={d} class="choice" aria-pressed={difficulty === d} disabled={!open} onClick={() => setDifficulty(d)}>
+              <span class="name">{DIFFICULTY_NAMES[d]}</span>
+              <span class="effect">{open ? `×${({ normal: 1, hard: 1.6, brutal: 2.4 } as const)[d]} ${COPY.meta.points}` : gate ? COPY.setup.needWin(DIFFICULTY_NAMES[gate]) : ''}</span>
+            </button>
+          );
+        })}
+      </div>
+      {abandoning && <p class="warn-line">{COPY.setup.abandon}</p>}
+      <button
+        type="button"
+        class="btn solid wide"
+        onClick={() => {
+          if (app.startRun(route, difficulty)) modal.value = null;
+        }}
+      >
+        {abandoning ? COPY.setup.abandonYes : COPY.setup.start}
+      </button>
+    </Modal>
+  );
+}
+
+// ── Run result ──────────────────────────────────────────────────
+
+function ResultModal() {
+  const g = app.game;
+  const res = g.run.result;
+  if (!res) return null;
+  const close = () => (modal.value = null);
+  return (
+    <Modal title={res.won ? COPY.result.won : COPY.result.lost} onClose={close}>
+      <p class="ending-body">{res.won ? COPY.result.wonBody : COPY.result.lostBody}</p>
+      <dl class="card stats">
+        <div>
+          <dt>{COPY.result.time}</dt>
+          <dd class="num">{formatDuration(res.time)}</dd>
+        </div>
+        <div>
+          <dt>{COPY.result.earned}</dt>
+          <dd>
+            <Money value={D(10).pow(res.earnedLog10)} />
+          </dd>
+        </div>
+        <div>
+          <dt>{COPY.result.points}</dt>
+          <dd class="num">+{res.points}</dd>
+        </div>
+      </dl>
+      <div class="btn-row wide">
+        <button
+          type="button"
+          class="btn wide"
+          onClick={() => {
+            tab.value = 'meta';
+            close();
+          }}
+        >
+          {COPY.tabs.meta}
+        </button>
+        <button type="button" class="btn solid wide" onClick={() => (modal.value = 'setup')}>
+          {COPY.result.again}
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ── Leaderboard ─────────────────────────────────────────────────
+
+function LeaderboardModal() {
+  const lb = app.leaderboard;
+  const [kind, setKind] = useState<BoardKind>('lifetime');
+  const [difficulty, setDifficulty] = useState<Difficulty>('normal');
+  const [data, setData] = useState<BoardResult | null>(null);
+  const [loading, setLoading] = useState(lb.online);
+  const [name, setName] = useState(lb.nickname.value);
+
+  useEffect(() => {
+    if (!lb.online) return;
+    let live = true;
+    setLoading(true);
+    void (async () => {
+      await lb.submit(app.game.state, true);
+      const res = await lb.fetch(kind, difficulty);
+      if (!live) return;
+      setData(res);
+      setLoading(false);
+    })();
+    return () => {
+      live = false;
+    };
+  }, [kind, difficulty]);
+
+  const show = (v: number) => (kind === 'fastest' ? <span class="num">{formatDuration(v)}</span> : <Money value={D(10).pow(v)} />);
+
+  const saveName = async () => {
+    if (await lb.setNickname(name, app.game.state)) {
+      setName(lb.nickname.value);
+      pushToast({ title: COPY.toast.nicknameSaved });
+      if (lb.online) setData(await lb.fetch(kind, difficulty));
+    }
+  };
+
+  const rows = data?.top ?? [];
+  const meOutside = data?.me && !rows.some((r) => r.me) ? data.me : null;
+
+  return (
+    <Modal title={COPY.leaderboard.title}>
+      <Segmented
+        label="榜单"
+        value={kind}
+        options={[
+          { value: 'lifetime', label: COPY.leaderboard.lifetime },
+          { value: 'best', label: COPY.leaderboard.best },
+          { value: 'fastest', label: COPY.leaderboard.fastest },
+        ]}
+        onChange={setKind}
+      />
+      {kind === 'fastest' && (
+        <Segmented
+          label="难度"
+          value={difficulty}
+          options={DIFFICULTIES.map((d) => ({ value: d, label: DIFFICULTY_NAMES[d] }))}
+          onChange={setDifficulty}
+        />
+      )}
+      <div class="card board">
+        {!lb.online && <p class="empty">{COPY.leaderboard.offline}</p>}
+        {lb.online && loading && <p class="empty">{COPY.leaderboard.loading}</p>}
+        {lb.online && !loading && !data && <p class="empty">{COPY.leaderboard.offline}</p>}
+        {lb.online && !loading && data && rows.length === 0 && <p class="empty">{COPY.leaderboard.empty}</p>}
+        {rows.length > 0 && (
+          <ol class="board-list">
+            {rows.map((r) => (
+              <li key={r.rank} class={r.me ? 'me' : ''} data-top={r.rank <= 3 ? r.rank : undefined}>
+                <span class="rank num">{r.rank}</span>
+                <span class="who">{r.nickname}</span>
+                <span class="val">{show(r.value)}</span>
+              </li>
+            ))}
+            {meOutside && (
+              <li class="me gap">
+                <span class="rank num">{meOutside.rank}</span>
+                <span class="who">{meOutside.nickname}</span>
+                <span class="val">{show(meOutside.value)}</span>
+              </li>
+            )}
+          </ol>
+        )}
+      </div>
+      <form
+        class="card name-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void saveName();
+        }}
+      >
+        <label for="nickname">{COPY.leaderboard.nickname}</label>
+        <input
+          id="nickname"
+          value={name}
+          maxLength={NICKNAME_MAX}
+          autoComplete="off"
+          onInput={(e) => setName((e.target as HTMLInputElement).value)}
+        />
+        <button type="submit" class="btn solid" disabled={!name.trim() || name === lb.nickname.value}>
+          {COPY.leaderboard.save}
+        </button>
+      </form>
+    </Modal>
+  );
+}
+
+// ── Settings ────────────────────────────────────────────────────
+
+function SettingsModal() {
+  const s = app.settings.value;
+  const [importing, setImporting] = useState(false);
+  const [text, setText] = useState('');
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [showCredits, setShowCredits] = useState(false);
+
+  if (showCredits) {
+    return (
+      <Modal title={COPY.settings.credits} onClose={() => setShowCredits(false)} wide>
+        <div class="card credits">
+          <h3>{COPY.settings.creditsModels}</h3>
+          <p class="muted">
+            <a href={credits.models.home} target="_blank" rel="noreferrer">
+              {credits.models.author}
+            </a>{' '}
+            ·{' '}
+            <a href={credits.models.licenseUrl} target="_blank" rel="noreferrer">
+              {credits.models.license}
+            </a>{' '}
+            · {COPY.settings.creditsModelsNote}
+          </p>
+          <ul class="credit-list">
+            {credits.models.items.map((c) => (
+              <li key={c.url}>
+                <a href={c.url} target="_blank" rel="noreferrer">
+                  {c.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+          <h3>{COPY.settings.creditsOther}</h3>
+          <ul class="credit-list plain">
+            <li>ZCOOL KuaiLe · Fredoka — SIL OFL 1.1</li>
+            <li>Radix Colors — MIT</li>
+            <li>three.js · Preact · break_infinity.js · Supabase JS — MIT</li>
+          </ul>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal title={COPY.settings.title}>
+      <div class="card settings">
+        <div class="setting">
+          <span>{COPY.settings.sound}</span>
+          <Segmented
+            label={COPY.settings.sound}
+            value={s.muted ? 'off' : 'on'}
+            options={[
+              { value: 'on', label: COPY.settings.on },
+              { value: 'off', label: COPY.settings.off },
+            ]}
+            onChange={(v) => app.updateSettings({ muted: v === 'off' })}
+          />
+        </div>
+        <div class="setting">
+          <span>{COPY.settings.quality}</span>
+          <Segmented
+            label={COPY.settings.quality}
+            value={s.quality}
+            options={[
+              { value: 'high', label: COPY.settings.qualityHigh },
+              { value: 'low', label: COPY.settings.qualityLow },
+            ]}
+            onChange={(v) => app.updateSettings({ quality: v })}
+          />
+        </div>
+        <div class="setting">
+          <span>{COPY.settings.save}</span>
+          <div class="btn-row">
+            <button
+              type="button"
+              class="btn"
+              onClick={async () => {
+                const code = app.exportSave();
+                try {
+                  await navigator.clipboard.writeText(code);
+                } catch {
+                  setText(code);
+                  setImporting(true);
+                }
+                pushToast({ title: COPY.toast.exported });
+              }}
+            >
+              {COPY.settings.export}
+            </button>
+            <button type="button" class="btn" onClick={() => setImporting((v) => !v)}>
+              {COPY.settings.import}
+            </button>
+          </div>
+        </div>
+        {importing && (
+          <div class="import">
+            <textarea
+              rows={3}
+              placeholder={COPY.settings.importPlaceholder}
+              value={text}
+              onInput={(e) => setText((e.target as HTMLTextAreaElement).value)}
+            />
+            <button
+              type="button"
+              class="btn solid"
+              disabled={!text.trim()}
+              onClick={() => {
+                // A good save reloads the page; only a failure needs a message.
+                if (!app.importSave(text)) pushToast({ title: COPY.toast.importFailed });
+              }}
+            >
+              {COPY.settings.importConfirm}
+            </button>
+          </div>
+        )}
+      </div>
+      <div class="card settings">
+        <button type="button" class="btn link" onClick={() => (modal.value = 'setup')}>
+          {COPY.settings.newRun}
+        </button>
+        <button type="button" class="btn link" onClick={() => setShowCredits(true)}>
+          {COPY.settings.credits}
+        </button>
+        {!confirmReset ? (
+          <button type="button" class="btn danger-soft" onClick={() => setConfirmReset(true)}>
+            {COPY.settings.reset}
+          </button>
+        ) : (
+          <div class="confirm">
+            <span>{COPY.settings.resetConfirm}</span>
+            <div class="btn-row">
+              <button type="button" class="btn" onClick={() => setConfirmReset(false)}>
+                {COPY.settings.cancel}
+              </button>
+              <button type="button" class="btn danger" onClick={() => app.resetSave()}>
+                {COPY.settings.resetYes}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
