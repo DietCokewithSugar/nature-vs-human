@@ -1,49 +1,52 @@
-import type { CreatureId, EraId } from '../types.ts';
+import type { CreatureId, DomesticId, EraId, UnitClass } from '../types.ts';
+import { BALANCE } from './balance.ts';
+import { CLASSES } from './classes.ts';
 
 export interface CreatureDef {
   id: CreatureId;
   era: EraId;
+  cls: UnitClass;
   name: string;
-  /** Short job title shown next to the name. Part of the joke, not an explanation. */
+  /** Short job title next to the name. Part of the joke, not an explanation. */
   title: string;
-  /** Model file under public/models (without extension). */
+  /** Model key resolved by the scene (may be a kitbashed variant). */
   model: string;
   baseCost: number;
-  /** Damage per second per unit before multipliers. */
+  /** Damage per second per unit before multipliers (class attack included). */
   baseProd: number;
+  /** Humans can tame this species into the given domestic animal. */
+  tame?: DomesticId;
+  /** Ancient megafauna fall behind as eras advance. */
+  ancient?: boolean;
 }
-
-/** Cost and output step between consecutive tiers. Payback grows by COST_STEP / PROD_STEP per tier. */
-export const COST_STEP = 10;
-export const PROD_STEP = 7.5;
 
 type Row = Omit<CreatureDef, 'baseCost' | 'baseProd'>;
 
 const ROWS: Row[] = [
-  // 虫潮
-  { id: 'ant', era: 1, name: '蚂蚁', title: '地基检测员', model: 'ant' },
-  { id: 'grasshopper', era: 1, name: '蚱蜢', title: '草坪拆除队', model: 'grasshopper' },
-  { id: 'wasp', era: 1, name: '胡蜂', title: '野餐终结者', model: 'wasp' },
-  { id: 'beetle', era: 1, name: '锹甲', title: '家具品鉴师', model: 'beetle' },
-  { id: 'mantis', era: 1, name: '螳螂', title: '专业挡车', model: 'mantis' },
-  // 海啸
-  { id: 'crab', era: 2, name: '螃蟹', title: '横行执法队', model: 'crab' },
-  { id: 'jellyfish', era: 2, name: '水母', title: '海滩劝退师', model: 'jellyfish' },
-  { id: 'eel', era: 2, name: '海鳗', title: '光缆质检员', model: 'eel' },
-  { id: 'octopus', era: 2, name: '章鱼', title: '八线程开锁匠', model: 'octopus' },
-  { id: 'shark', era: 2, name: '鲨鱼', title: '首席冲浪评委', model: 'shark' },
-  // 兽群
-  { id: 'rat', era: 3, name: '老鼠', title: '电线品鉴师', model: 'rat' },
-  { id: 'pigeon', era: 3, name: '鸽子', title: '雕像涂装师', model: 'pigeon' },
-  { id: 'fox', era: 3, name: '狐狸', title: '垃圾桶审计', model: 'fox' },
-  { id: 'bear', era: 3, name: '熊', title: '便利店会员', model: 'bear' },
-  { id: 'elephant', era: 3, name: '大象', title: '瓷器店顾问', model: 'elephant' },
-  // 远古
-  { id: 'raptor', era: 4, name: '迅猛龙', title: '旋转门测试员', model: 'raptor' },
-  { id: 'pteranodon', era: 4, name: '翼龙', title: '空域管制员', model: 'pteranodon' },
-  { id: 'triceratops', era: 4, name: '三角龙', title: '违停清理员', model: 'triceratops' },
-  { id: 'brachiosaurus', era: 4, name: '腕龙', title: '高层观光客', model: 'brachiosaurus' },
-  { id: 'trex', era: 4, name: '霸王龙', title: '首席灭绝官', model: 'trex' },
+  // 冰河
+  { id: 'ant', era: 1, cls: 'assassin', name: '蚂蚁', title: '地基检测员', model: 'ant' },
+  { id: 'wolf', era: 1, cls: 'hunter', name: '狼', title: '部落夜班', model: 'wolf', tame: 'dog' },
+  { id: 'sabertooth', era: 1, cls: 'hunter', name: '剑齿虎', title: '牙医噩梦', model: 'sabertooth', ancient: true },
+  { id: 'cavebear', era: 1, cls: 'tank', name: '洞熊', title: '山洞原房东', model: 'cavebear', ancient: true },
+  { id: 'mammoth', era: 1, cls: 'tank', name: '猛犸象', title: '冰河拆迁办', model: 'mammoth', ancient: true },
+  // 古代
+  { id: 'locust', era: 2, cls: 'swarm', name: '蝗虫', title: '粮仓清算组', model: 'locust' },
+  { id: 'rat', era: 2, cls: 'swarm', name: '老鼠', title: '瘟疫快递员', model: 'rat' },
+  { id: 'wildcat', era: 2, cls: 'hunter', name: '野猫', title: '不签合同', model: 'wildcat', tame: 'cat' },
+  { id: 'boar', era: 2, cls: 'tank', name: '野猪', title: '田地翻新工', model: 'boar', tame: 'pig' },
+  { id: 'crocodile', era: 2, cls: 'marine', name: '鳄鱼', title: '护城河物业', model: 'crocodile' },
+  // 工业
+  { id: 'mosquito', era: 3, cls: 'assassin', name: '蚊子', title: '夜间收费员', model: 'mosquito' },
+  { id: 'pigeon', era: 3, cls: 'swarm', name: '鸽子', title: '雕像涂装师', model: 'pigeon' },
+  { id: 'octopus', era: 3, cls: 'marine', name: '章鱼', title: '八线程开锁匠', model: 'octopus' },
+  { id: 'shark', era: 3, cls: 'marine', name: '鲨鱼', title: '首席冲浪评委', model: 'shark' },
+  { id: 'bison', era: 3, cls: 'tank', name: '野牛', title: '铁路拦截员', model: 'bison' },
+  // 现代
+  { id: 'termite', era: 4, cls: 'assassin', name: '白蚁', title: '木结构审计', model: 'termite' },
+  { id: 'crow', era: 4, cls: 'swarm', name: '乌鸦', title: '垃圾分类监督', model: 'crow' },
+  { id: 'tiger', era: 4, cls: 'hunter', name: '老虎', title: '首席恐吓官', model: 'tiger' },
+  { id: 'rhino', era: 4, cls: 'tank', name: '犀牛', title: '违停清理员', model: 'rhino' },
+  { id: 'elephant', era: 4, cls: 'tank', name: '大象', title: '瓷器店顾问', model: 'elephant' },
 ];
 
 /** Round to two significant digits so prices read cleanly (1.4M, not 1.37M). */
@@ -53,10 +56,12 @@ function nice(x: number): number {
   return Math.round(x / p) * p;
 }
 
+const T = BALANCE.tiers;
+
 export const CREATURES: readonly CreatureDef[] = ROWS.map((row, i) => ({
   ...row,
-  baseCost: nice(15 * COST_STEP ** i),
-  baseProd: nice(0.15 * PROD_STEP ** i),
+  baseCost: nice(T.costBase * T.costStep ** i),
+  baseProd: nice(T.prodBase * T.prodStep ** i * CLASSES[row.cls].atk),
 }));
 
 export const CREATURE_BY_ID: Record<CreatureId, CreatureDef> = Object.fromEntries(
@@ -67,4 +72,8 @@ export const CREATURE_IDS: readonly CreatureId[] = CREATURES.map((c) => c.id);
 
 export function creaturesOfEra(era: EraId): CreatureDef[] {
   return CREATURES.filter((c) => c.era === era);
+}
+
+export function creaturesOfClass(cls: UnitClass): CreatureDef[] {
+  return CREATURES.filter((c) => c.cls === cls);
 }

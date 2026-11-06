@@ -1,46 +1,48 @@
 import { D, ZERO, type Decimal } from './bignum.ts';
 import { BALANCE } from './config/balance.ts';
-import { CREATURES, CREATURE_BY_ID } from './config/creatures.ts';
-import { GENE_BY_ID } from './config/genes.ts';
+import { CREATURE_BY_ID, CREATURES } from './config/creatures.ts';
+import { DOMESTICS, countermeasureName } from './config/humans.ts';
+import { META_BY_ID, ROUTES } from './config/meta.ts';
+import { SKILL_BY_ID } from './config/skills.ts';
 import { UPGRADE_BY_ID } from './config/upgrades.ts';
 import {
   canAfford,
+  classIncome,
   clickValue,
-  creatureCost,
   creatureCostN,
-  genesOnEvolve,
   incomePerSec,
   maxAffordable,
   milestonesReached,
   pay,
+  runPoints,
   unitProd,
-  upgradeCost,
 } from './economy.ts';
-import { breedRate, queenCost } from './mechanics/breeding.ts';
-import { advanceTide, startSurge, tideIntegral } from './mechanics/tide.ts';
-import { computeMods, type Mods } from './modifiers.ts';
-import { availableUpgrades, geneLevel, geneUnlocked, genesFree, isCreatureUnlocked, meets } from './progression.ts';
-import { createState, emptyCreatures, type GameState } from './state.ts';
-import type { CreatureId, EraId } from './types.ts';
+import { breedRate, nestCost } from './mechanics/breeding.ts';
+import { TAMEABLE, billProgress, researchRate, tamingRate } from './mechanics/humans.ts';
+import { advanceTide, tideIntegral } from './mechanics/tide.ts';
+import { computeMods, metaMods, type Mods } from './modifiers.ts';
+import { availableUpgrades, difficultyUnlocked, isCreatureUnlocked, meets, metaFree, metaLevel, skillStatus } from './progression.ts';
+import { createRun, createState, type Countermeasure, type GameState, type RunResult } from './state.ts';
+import { CLASS_IDS, type ActiveId, type CreatureId, type Difficulty, type DomesticId, type EraId, type RouteId } from './types.ts';
 
 export type CoreEvent =
   | { type: 'creatureBought'; id: CreatureId; count: number; total: number }
   | { type: 'milestone'; id: CreatureId; owned: number }
   | { type: 'upgradeBought'; id: string }
-  | { type: 'eraUnlocked'; era: EraId; first: boolean }
-  | { type: 'queenBought'; queens: number }
-  | { type: 'surge' }
+  | { type: 'skillBought'; id: string }
+  | { type: 'eraUnlocked'; era: EraId }
+  | { type: 'nestBought'; nests: number }
+  | { type: 'active'; id: ActiveId }
   | { type: 'click'; gain: Decimal }
-  | { type: 'evolved'; gained: number; evolutions: number }
-  | { type: 'geneBought'; id: string; level: number }
-  | { type: 'ending' }
+  | { type: 'countermeasure'; cm: Countermeasure; name: string }
+  | { type: 'defected'; id: CreatureId; count: number; domestic: DomesticId }
+  | { type: 'runEnded'; result: RunResult }
+  | { type: 'runStarted' }
+  | { type: 'metaBought'; id: string; level: number }
   | { type: 'reset' };
 
 /** A fixed count, or as many as money allows. */
 export type BuyAmount = number | 'max';
-
-/** Upper bound on purchases per autobuy pass, so a long catch-up stays cheap. */
-const AUTOBUY_PER_STEP = 40;
 
 /**
  * The logic core. Owns the state, applies commands, advances time.
@@ -54,6 +56,14 @@ export class Game {
   constructor(state: GameState = createState()) {
     this.state = state;
     this.mods = computeMods(state);
+  }
+
+  get run() {
+    return this.state.run;
+  }
+
+  get meta() {
+    return this.state.meta;
   }
 
   on(fn: (e: CoreEvent) => void): () => void {
@@ -75,242 +85,321 @@ export class Game {
     this.emit({ type: 'reset' });
   }
 
+  get running(): boolean {
+    return this.run.result === null;
+  }
+
   // ── Time ─────────────────────────────────────────────────────
 
-  /** Advance the simulation by dt seconds. Long dt is split into exact chunks. */
+  /** Advance by dt seconds. Long dt is split into chunks with exact integrals inside each. */
   advance(dt: number): void {
-    if (!(dt > 0) || !Number.isFinite(dt)) return;
+    if (!(dt > 0) || !Number.isFinite(dt) || !this.running) return;
     const stepSize = dt <= 1 ? dt : Math.max(1, dt / BALANCE.maxChunks);
     let remaining = dt;
     let guard = 0;
-    while (remaining > 1e-9 && guard++ < BALANCE.maxChunks * 3 + 10) {
+    while (remaining > 1e-9 && this.running && guard++ < BALANCE.maxChunks * 3 + 10) {
       let h = Math.min(remaining, stepSize);
-      const tide = this.state.tide;
-      if (this.mods.tide && tide.surgeLeft > 0) h = Math.min(h, tide.surgeLeft);
-      this.integrate(h);
+      const run = this.run;
+      if (this.mods.tide && run.tide.surgeLeft > 0) h = Math.min(h, run.tide.surgeLeft);
+      if (run.rampageLeft > 0) h = Math.min(h, run.rampageLeft);
+      this.step(h);
       remaining -= h;
-      if (this.mods.autoSurge && startSurge(this.state.tide, this.mods)) this.emit({ type: 'surge' });
-      this.runAutobuy();
     }
   }
 
-  private integrate(h: number): void {
-    const s = this.state;
+  private step(h: number): void {
+    const run = this.run;
     const m = this.mods;
-    const rate = breedRate(s, m);
-    const tideFactor = tideIntegral(s.tide, m, h) / h;
+    // Production, with breeding and tide integrated exactly over the step.
+    const rate = breedRate(run, m);
+    const tideFactor = tideIntegral(run.tide, m, h) / h;
     let gain = ZERO;
     for (const def of CREATURES) {
-      const c = s.creatures[def.id];
+      const c = run.creatures[def.id];
       const amount = c.bought + c.bred;
       if (amount <= 0) continue;
       let amountIntegral = amount * h;
-      if (def.era === 1 && rate > 0 && c.bought > 0) {
+      if (def.cls === 'swarm' && rate > 0 && c.bought > 0) {
         const growth = c.bought * rate;
         amountIntegral += (growth * h * h) / 2;
         c.bred += growth * h;
       }
-      let g = unitProd(s, m, def.id).mul(amountIntegral);
-      if (def.era === 2) g = g.mul(tideFactor);
+      let g = unitProd(run, m, def.id).mul(amountIntegral);
+      if (def.cls === 'marine') g = g.mul(tideFactor);
       gain = gain.add(g);
     }
     this.addMoney(gain);
-    advanceTide(s.tide, h);
-    s.playTime += h;
-    s.runTime += h;
+    advanceTide(run.tide, h);
+    run.rampageLeft = Math.max(0, run.rampageLeft - h);
+    for (const id of Object.keys(run.cooldowns) as ActiveId[]) {
+      run.cooldowns[id] = Math.max(0, (run.cooldowns[id] ?? 0) - h);
+    }
+    run.time += h;
+    this.meta.playTime += h;
+
+    // The humans push back.
+    this.stepTaming(h);
+    run.research = Math.min(1, run.research + researchRate(run, this.mods) * h);
+    this.fireCountermeasures();
+
+    if (run.earned.gte(BALANCE.difficulty[run.difficulty].bill)) this.endRun(true);
+    else if (run.research >= 1) this.endRun(false);
+  }
+
+  private stepTaming(h: number): void {
+    const run = this.run;
+    for (const id of TAMEABLE) {
+      const rate = tamingRate(run, this.mods, id);
+      if (rate <= 0) continue;
+      const next = (run.taming[id] ?? 0) + rate * h;
+      run.taming[id] = Math.min(1, next);
+      if (next >= 1) this.defect(id);
+    }
+  }
+
+  private defect(id: CreatureId): void {
+    const run = this.run;
+    const c = run.creatures[id];
+    const count = Math.round(c.bought + c.bred);
+    run.defected[id] = count;
+    run.creatures[id] = { bought: 0, bred: 0 };
+    delete run.taming[id];
+    this.refreshMods();
+    const domestic = CREATURE_BY_ID[id].tame!;
+    this.emit({ type: 'defected', id, count, domestic });
+  }
+
+  private fireCountermeasures(): void {
+    const run = this.run;
+    const thresholds = BALANCE.research.thresholds;
+    while (run.countermeasures.length < thresholds.length && run.research >= thresholds[run.countermeasures.length]!) {
+      const income = classIncome(run, this.mods);
+      let target = CLASS_IDS[0]!;
+      for (const cls of CLASS_IDS) if (income[cls].gt(income[target])) target = cls;
+      const cm: Countermeasure = { cls: target, era: run.era, at: run.time };
+      run.countermeasures.push(cm);
+      this.refreshMods();
+      this.emit({ type: 'countermeasure', cm, name: countermeasureName(cm.cls, cm.era) });
+    }
+  }
+
+  private endRun(won: boolean): void {
+    const run = this.run;
+    const meta = this.meta;
+    const progress = won ? 1 : billProgress(run);
+    const diff = BALANCE.difficulty[run.difficulty];
+    const points = runPoints(progress, won, diff.points);
+    const earnedLog10 = run.earned.gt(0) ? run.earned.log10() : 0;
+    const result: RunResult = { won, time: run.time, points, earnedLog10 };
+    run.result = result;
+    meta.points += points;
+    meta.runs++;
+    meta.bestRunLog10 = Math.max(meta.bestRunLog10, earnedLog10);
+    if (won) {
+      meta.wins[run.difficulty]++;
+      const best = meta.fastest[run.difficulty];
+      if (best === null || run.time < best) meta.fastest[run.difficulty] = run.time;
+    }
+    this.emit({ type: 'runEnded', result });
   }
 
   private addMoney(gain: Decimal): void {
-    const s = this.state;
-    s.money = s.money.add(gain);
-    s.runEarned = s.runEarned.add(gain);
-    s.lifetimeEarned = s.lifetimeEarned.add(gain);
-    if (s.runEarned.gt(0)) s.bestRunLog10 = Math.max(s.bestRunLog10, s.runEarned.log10());
+    const run = this.run;
+    run.money = run.money.add(gain);
+    run.earned = run.earned.add(gain);
+    this.meta.lifetime = this.meta.lifetime.add(gain);
   }
 
-  private runAutobuy(): void {
-    const s = this.state;
-    const m = this.mods;
-    let any = false;
-    for (const era of [1, 2, 3, 4] as EraId[]) {
-      if (m.autobuyUnlocked[era] && s.autobuy[era] && era <= s.era) any = true;
-    }
-    if (!any) return;
-    for (let i = 0; i < AUTOBUY_PER_STEP; i++) {
-      let best: CreatureId | null = null;
-      let bestScore = Number.POSITIVE_INFINITY;
-      for (const def of CREATURES) {
-        if (!(m.autobuyUnlocked[def.era] && s.autobuy[def.era] && def.era <= s.era)) continue;
-        const cost = creatureCost(def.id, s.creatures[def.id].bought);
-        if (!canAfford(cost, s.money)) continue;
-        const score = cost.div(unitProd(s, m, def.id)).toNumber();
-        if (score < bestScore) {
-          bestScore = score;
-          best = def.id;
-        }
-      }
-      if (!best) return;
-      this.buyCreature(best, 1);
-    }
+  // ── Runs ─────────────────────────────────────────────────────
+
+  canStart(route: RouteId, difficulty: Difficulty): boolean {
+    const m = metaMods(this.meta);
+    return m.routesUnlocked[route] && difficultyUnlocked(this.meta, difficulty);
+  }
+
+  /** Abandon whatever is going on and start a fresh run. */
+  startRun(route: RouteId = 'beasts', difficulty: Difficulty = 'normal'): boolean {
+    if (!this.canStart(route, difficulty)) return false;
+    const run = createRun(route, difficulty);
+    run.money = D(metaMods(this.meta).startMoney);
+    for (const id of ROUTES[route].freeSkills) run.skills[id] = true;
+    this.state.run = run;
+    this.refreshMods();
+    this.emit({ type: 'runStarted' });
+    return true;
   }
 
   // ── Commands ─────────────────────────────────────────────────
 
   click(): Decimal {
-    const gain = clickValue(this.state, this.mods);
+    if (!this.running) return ZERO;
+    const gain = clickValue(this.run, this.mods);
     this.addMoney(gain);
-    this.state.clicks++;
+    this.run.clicks++;
     this.emit({ type: 'click', gain });
     return gain;
   }
 
-  /** How many units a buy button would purchase right now (0 if unaffordable). */
   buyCount(id: CreatureId, amount: BuyAmount): number {
-    const c = this.state.creatures[id];
-    if (amount === 'max') return maxAffordable(id, c.bought, this.state.money);
-    return canAfford(creatureCostN(id, c.bought, amount), this.state.money) ? amount : 0;
+    const c = this.run.creatures[id];
+    if (amount === 'max') return maxAffordable(id, c.bought, this.run.money);
+    return canAfford(creatureCostN(id, c.bought, amount), this.run.money) ? amount : 0;
   }
 
   buyCreature(id: CreatureId, amount: BuyAmount): number {
-    const s = this.state;
-    if (!isCreatureUnlocked(s, id)) return 0;
+    const run = this.run;
+    if (!this.running || !isCreatureUnlocked(run, id)) return 0;
     const n = this.buyCount(id, amount);
     if (n <= 0) return 0;
-    const c = s.creatures[id];
-    const cost = creatureCostN(id, c.bought, n);
+    const c = run.creatures[id];
     const before = milestonesReached(c.bought);
-    s.money = pay(s.money, cost);
+    run.money = pay(run.money, creatureCostN(id, c.bought, n));
     c.bought += n;
     this.emit({ type: 'creatureBought', id, count: n, total: c.bought });
     if (milestonesReached(c.bought) > before) this.emit({ type: 'milestone', id, owned: c.bought });
     return n;
   }
 
-  queenCost(): Decimal {
-    return queenCost(this.state.queens);
+  nestCost(): Decimal {
+    return nestCost(this.run.nests);
   }
 
-  buyQueen(): boolean {
-    const s = this.state;
-    if (!this.mods.breeding) return false;
-    const cost = queenCost(s.queens);
-    if (!canAfford(cost, s.money)) return false;
-    s.money = pay(s.money, cost);
-    s.queens++;
-    this.emit({ type: 'queenBought', queens: s.queens });
+  buyNest(): boolean {
+    const run = this.run;
+    if (!this.running || !this.mods.breeding) return false;
+    const cost = nestCost(run.nests);
+    if (!canAfford(cost, run.money)) return false;
+    run.money = pay(run.money, cost);
+    run.nests++;
+    this.emit({ type: 'nestBought', nests: run.nests });
     return true;
   }
 
-  buyUpgrade(id: string): boolean {
-    const s = this.state;
+  upgradeCost(id: string): Decimal {
     const def = UPGRADE_BY_ID[id];
-    if (!def || s.upgrades[id]) return false;
-    if (!def.req.every((r) => meets(s, r))) return false;
-    const cost = upgradeCost(def, this.mods);
-    if (!canAfford(cost, s.money)) return false;
-    s.money = pay(s.money, cost);
-    s.upgrades[id] = true;
+    return def ? D(def.cost) : ZERO;
+  }
+
+  buyUpgrade(id: string): boolean {
+    const run = this.run;
+    const def = UPGRADE_BY_ID[id];
+    if (!this.running || !def || run.upgrades[id] || !def.req.every((r) => meets(run, r))) return false;
+    const cost = D(def.cost);
+    if (!canAfford(cost, run.money)) return false;
+    run.money = pay(run.money, cost);
+    run.upgrades[id] = true;
     for (const e of def.effects) {
-      if (e.type === 'unlockEra') this.unlockEra(e.era);
-      if (e.type === 'ending' && s.endedAt === null) {
-        s.endedAt = s.playTime;
-        this.emit({ type: 'ending' });
+      if (e.type === 'unlockEra' && e.era > run.era) {
+        run.era = e.era;
+        this.emit({ type: 'eraUnlocked', era: e.era });
       }
     }
-    if (def.effects.some((e) => e.type === 'unlockBreeding') && s.queens === 0) s.queens = 1;
     this.refreshMods();
     this.emit({ type: 'upgradeBought', id });
     return true;
   }
 
-  private unlockEra(era: EraId): void {
-    const s = this.state;
-    if (era <= s.era) return;
-    s.era = era;
-    const first = era > s.bestEra;
-    if (first) s.bestEra = era;
-    if (era === 4 && s.dinoAt === null) s.dinoAt = s.playTime;
-    this.emit({ type: 'eraUnlocked', era, first });
+  skillCost(id: string): Decimal {
+    const def = SKILL_BY_ID[id];
+    return def ? D(def.cost) : ZERO;
   }
 
-  surge(): boolean {
-    const ok = startSurge(this.state.tide, this.mods);
-    if (ok) this.emit({ type: 'surge' });
-    return ok;
-  }
-
-  setAutobuy(era: EraId, on: boolean): void {
-    this.state.autobuy[era] = on;
-  }
-
-  // ── Evolution ────────────────────────────────────────────────
-
-  genesOnEvolve(): number {
-    return genesOnEvolve(this.state);
-  }
-
-  evolve(): boolean {
-    const s = this.state;
-    const gained = genesOnEvolve(s);
-    if (gained < 1) return false;
-    s.genes += gained;
-    s.evolutions++;
-    this.resetRun();
-    this.emit({ type: 'evolved', gained, evolutions: s.evolutions });
+  buySkill(id: string): boolean {
+    const run = this.run;
+    const def = SKILL_BY_ID[id];
+    if (!this.running || !def || skillStatus(run, this.mods, def) !== 'available') return false;
+    const cost = D(def.cost);
+    if (!canAfford(cost, run.money)) return false;
+    run.money = pay(run.money, cost);
+    run.skills[id] = true;
+    for (const e of def.effects) {
+      if (e.type === 'unlockBreeding') run.nests = Math.max(run.nests, 1);
+      if (e.type === 'convert') {
+        const from = run.creatures[e.from];
+        run.creatures[e.to].bred += from.bought + from.bred;
+        run.creatures[e.from] = { bought: 0, bred: 0 };
+      }
+    }
+    this.refreshMods();
+    this.emit({ type: 'skillBought', id });
     return true;
   }
 
-  private resetRun(): void {
-    const s = this.state;
-    s.upgrades = {};
-    this.refreshMods();
-    const m = this.mods;
-    s.money = D(m.startMoney);
-    s.runEarned = ZERO;
-    s.creatures = emptyCreatures();
-    s.queens = m.startQueens;
-    s.tide = { clock: 0, surgeLeft: 0, cooldownLeft: 0 };
-    s.era = 1;
-    s.runTime = 0;
-    for (let e = 2; e <= m.startEra; e++) this.unlockEra(e as EraId);
+  /** Seconds until an active skill is ready again (0 = ready). */
+  cooldown(id: ActiveId): number {
+    return this.run.cooldowns[id] ?? 0;
   }
 
-  buyGene(id: string): boolean {
-    const s = this.state;
-    const def = GENE_BY_ID[id];
-    if (!def || !geneUnlocked(s, def)) return false;
-    const level = geneLevel(s, id);
+  activate(id: ActiveId): boolean {
+    const run = this.run;
+    if (!this.running || !this.mods.actives[id] || this.cooldown(id) > 0) return false;
+    const A = BALANCE.actives;
+    switch (id) {
+      case 'surge':
+        if (!this.mods.tide) return false;
+        run.tide.surgeLeft = this.mods.surgeDuration;
+        run.cooldowns.surge = this.mods.surgeCooldown;
+        break;
+      case 'rescue':
+        for (const k of Object.keys(run.taming) as CreatureId[]) {
+          run.taming[k] = Math.max(0, (run.taming[k] ?? 0) - A.rescue.amount);
+        }
+        run.cooldowns.rescue = A.rescue.cooldown;
+        break;
+      case 'rampage':
+        run.rampageLeft = A.rampage.duration;
+        run.cooldowns.rampage = A.rampage.cooldown;
+        break;
+      case 'sabotage':
+        run.research = Math.max(0, run.research - A.sabotage.amount);
+        run.cooldowns.sabotage = A.sabotage.cooldown;
+        break;
+    }
+    this.emit({ type: 'active', id });
+    return true;
+  }
+
+  // ── Meta ─────────────────────────────────────────────────────
+
+  buyMeta(id: string): boolean {
+    const meta = this.meta;
+    const def = META_BY_ID[id];
+    if (!def) return false;
+    const level = metaLevel(meta, id);
     const next = def.levels[level];
-    if (!next || next.cost > genesFree(s)) return false;
-    s.geneLevels[id] = level + 1;
-    s.genesSpent += next.cost;
-    const prevQueens = this.mods.startQueens;
+    if (!next || next.cost > metaFree(meta)) return false;
+    meta.levels[id] = level + 1;
+    meta.spent += next.cost;
     this.refreshMods();
-    if (this.mods.startQueens > prevQueens) s.queens = Math.max(s.queens, this.mods.startQueens);
-    this.emit({ type: 'geneBought', id, level: level + 1 });
+    this.emit({ type: 'metaBought', id, level: level + 1 });
     return true;
   }
 
-  // ── Queries (thin wrappers for the presentation layer) ───────
+  // ── Queries ──────────────────────────────────────────────────
 
   income(): Decimal {
-    return incomePerSec(this.state, this.mods);
+    return incomePerSec(this.run, this.mods);
   }
 
   clickValue(): Decimal {
-    return clickValue(this.state, this.mods);
+    return clickValue(this.run, this.mods);
   }
 
   availableUpgrades() {
-    return availableUpgrades(this.state);
+    return availableUpgrades(this.run);
   }
 
-  upgradeCost(id: string): Decimal {
-    const def = UPGRADE_BY_ID[id];
-    return def ? upgradeCost(def, this.mods) : ZERO;
+  researchRate(): number {
+    return researchRate(this.run, this.mods);
   }
 
-  creatureDef(id: CreatureId) {
-    return CREATURE_BY_ID[id];
+  tamingRate(id: CreatureId): number {
+    return tamingRate(this.run, this.mods, id);
+  }
+
+  billProgress(): number {
+    return billProgress(this.run);
   }
 }
+
+export { DOMESTICS };

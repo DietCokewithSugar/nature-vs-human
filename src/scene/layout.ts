@@ -18,170 +18,189 @@ export interface Rect {
   z1: number;
 }
 
+export type GroundColor =
+  | 'snow'
+  | 'tundra'
+  | 'ice'
+  | 'earth'
+  | 'stone'
+  | 'lawn'
+  | 'cobble'
+  | 'brick'
+  | 'road'
+  | 'sidewalk'
+  | 'asphalt'
+  | 'plaza'
+  | 'pier';
+
 export interface GroundTile extends Rect {
-  color: 'lawn' | 'lawnDark' | 'road' | 'sidewalk' | 'beach' | 'pier' | 'asphalt' | 'plaza' | 'hedge';
+  color: GroundColor;
   y?: number;
   h?: number;
 }
 
 export interface DistrictDef {
   era: EraId;
-  /** World position of the board centre. Boards line up along −Z, so later eras sit behind earlier ones. */
+  /** World position of the board centre. Boards line up along −Z, so later eras sit behind. */
   ox: number;
   oz: number;
   width: number;
   depth: number;
+  /** The board's base colour (its top surface before tiles). */
+  base: GroundColor;
   ground: GroundTile[];
-  buildings: Placement[];
+  /** Destructible buildings; `lab` marks the humans' research building. */
+  buildings: (Placement & { lab?: boolean })[];
   props: Placement[];
   /** Where walkers may roam (local coordinates). */
   walk: Rect;
-  /** Water basin for swimmers, if any. */
+  /** Water for marine creatures, if any. */
   water?: Rect;
-  /** targetY: look-at height; height: tallest thing on the board, for framing. */
   camera: { targetY: number; height: number };
 }
 
-const road = (x0: number, x1: number, z0: number, z1: number): GroundTile => ({ x0, x1, z0, z1, color: 'road' });
+const road = (x0: number, x1: number, z0: number, z1: number, color: GroundColor = 'road'): GroundTile => ({ x0, x1, z0, z1, color });
 
 export const DISTRICTS: Record<EraId, DistrictDef> = {
-  // ── 幸福里小区：suburb ────────────────────────────────────────
+  // ── 冰河：原始部落 ──────────────────────────────────────────
   1: {
     era: 1,
     ox: 0,
     oz: 0,
-    width: 44,
-    depth: 44,
+    width: 48,
+    depth: 48,
+    base: 'snow',
     ground: [
-      { x0: -22, x1: 22, z0: -22, z1: 22, color: 'lawn' },
-      road(-22, 22, -2.5, 2.5),
-      road(-2.5, 2.5, -22, 22),
-      { x0: 3.5, x1: 21, z0: 3.5, z1: 11, color: 'lawnDark' },
-      { x0: -21, x1: -3.5, z0: -21, z1: -13, color: 'lawnDark' },
+      { x0: -20, x1: -6, z0: 8, z1: 21, color: 'tundra' },
+      { x0: 6, x1: 21, z0: -21, z1: -9, color: 'tundra' },
+      { x0: 9, x1: 19, z0: 11, z1: 19, color: 'ice' },
+      { x0: -6, x1: 6, z0: -4, z1: 4, color: 'earth' },
     ],
     buildings: [
-      { model: 'cottage', x: 8, z: 8, rot: 2, size: 8 },
-      { model: 'cabin', x: 17, z: 8, rot: 2, size: 7 },
-      { model: 'house-aframe', x: 17, z: 17, rot: 1, size: 8 },
-      { model: 'corner-shop', x: -8, z: 8, rot: 2, size: 8.85 },
-      { model: 'cabin', x: -17, z: 8, rot: 2, size: 7 },
-      { model: 'house-aframe', x: -8, z: 17, rot: 3, size: 8 },
-      { model: 'clubhouse', x: -11, z: -8, size: 12 },
-      { model: 'chalet', x: -8, z: -17, size: 9 },
-      { model: 'house-aframe', x: 8, z: -8, size: 8 },
-      { model: 'cottage', x: 17, z: -8, rot: 1, size: 8 },
-      { model: 'cabin', x: 8, z: -17, size: 7 },
-      { model: 'row-house', x: 17, z: -17, size: 8 },
+      { model: 'teepee-lab', x: 0, z: -11, size: 9, lab: true },
+      { model: 'teepee', x: -12, z: -13, size: 6 },
+      { model: 'teepee', x: 12, z: 2, size: 6 },
+      { model: 'teepee', x: -13, z: 2, size: 6 },
+      { model: 'teepee', x: -2, z: 13, size: 5.5 },
+      { model: 'dugout', x: -19, z: -4, rot: 1, size: 5 },
+      { model: 'dugout', x: 19, z: -4, rot: 3, size: 5 },
+      { model: 'lean-to', x: 6, z: 9, rot: 2, size: 4.5 },
+      { model: 'hide-rack', x: -7, z: -4, size: 3.4 },
+      { model: 'larder', x: 7, z: -5, size: 3, by: 'height' },
     ],
     props: [
-      { model: 'tree-oak', x: 7, z: 17, size: 5 },
-      { model: 'tree-birch', x: -17, z: 17, size: 3 },
-      { model: 'tree-pine', x: -19, z: -18, size: 3.6 },
-      { model: 'tree-broadleaf', x: -15, z: 20, size: 4.5 },
-      { model: 'tree-street', x: 4, z: 20, size: 3 },
-      { model: 'tree-street', x: -4, z: -20, size: 3 },
-      { model: 'bush', x: 12, z: 12, size: 1.6 },
-      { model: 'bush', x: -12, z: 12.5, size: 1.6 },
-      { model: 'bush', x: 12.5, z: -12, size: 1.6 },
-      { model: 'street-lamp', x: 3.4, z: 3.4, size: 5, by: 'height' },
-      { model: 'street-lamp', x: -3.4, z: -3.4, size: 5, by: 'height' },
-      { model: 'pickup', x: -1.2, z: 12, size: 4.8 },
-      { model: 'coupe', x: 13, z: 1.2, rot: 1, size: 4.5 },
+      { model: 'campfire', x: 0, z: 0, size: 2.6 },
+      { model: 'totem', x: 5, z: -10, size: 4.2, by: 'height' },
+      { model: 'fleshing', x: 3.5, z: 4, rot: 1, size: 2.4 },
+      { model: 'spear', x: -4, z: 4.5, size: 3, by: 'height' },
+      { model: 'spruce', x: -20, z: -20, size: 7, by: 'height' },
+      { model: 'spruce', x: -15, z: -21, size: 5.5, by: 'height' },
+      { model: 'spruce', x: 20, z: -20, size: 8, by: 'height' },
+      { model: 'spruce', x: 21, z: 4, size: 6, by: 'height' },
+      { model: 'spruce', x: -21, z: 12, size: 7, by: 'height' },
+      { model: 'spruce', x: 3, z: 21, size: 6, by: 'height' },
+      { model: 'boulders', x: 16, z: -14, size: 4 },
+      { model: 'boulders', x: -8, z: 19, size: 3.6 },
+      { model: 'petroglyph', x: -6, z: -18, size: 2.6 },
     ],
-    walk: { x0: -20, x1: 20, z0: -20, z1: 20 },
-    camera: { targetY: 3, height: 17 },
+    walk: { x0: -21, x1: 21, z0: -21, z1: 21 },
+    camera: { targetY: 2, height: 9 },
   },
 
-  // ── 金沙湾港：harbour ────────────────────────────────────────
+  // ── 古代：城邦 ──────────────────────────────────────────────
   2: {
     era: 2,
     ox: 0,
     oz: -78,
-    width: 44,
-    depth: 44,
+    width: 52,
+    depth: 52,
+    base: 'earth',
     ground: [
-      { x0: -22, x1: 22, z0: -22, z1: -9, color: 'sidewalk' },
-      road(-22, 22, -11, -8),
-      { x0: -22, x1: 22, z0: -8, z1: -3, color: 'beach', y: -0.4 },
-      { x0: -13, x1: -10, z0: -8, z1: 14, color: 'pier', y: 0.3, h: 3.2 },
+      road(-3, 3, -26, 13, 'stone'),
+      road(-26, 26, -9, -5, 'stone'),
+      { x0: -26, x1: 26, z0: 12, z1: 14, color: 'stone' },
     ],
     buildings: [
-      { model: 'boat-shed', x: -15, z: -16, size: 8 },
-      { model: 'beach-cafe', x: -5, z: -15, size: 4 },
-      { model: 'yard-crane', x: 3.5, z: -16, size: 5 },
-      { model: 'container', x: 9, z: -18.5, size: 6 },
-      { model: 'container', x: 9, z: -12.8, size: 6 },
-      { model: 'lighthouse', x: 17, z: -15, size: 9 },
-      { model: 'lifeguard-tower', x: 3, z: -5.5, size: 4 },
-      { model: 'fishing-boat', x: -16.5, z: 4, size: 6.8 },
-      { model: 'fishing-boat', x: -4, z: 13, rot: 1, size: 6.8 },
-      { model: 'barge', x: 10, z: 7, rot: 1, size: 9 },
-      { model: 'sailboat', x: 15, z: 16, size: 5, by: 'height' },
-      { model: 'sailboat', x: 3, z: 2.5, size: 4.5, by: 'height' },
+      { model: 'gatehouse', x: 0, z: -20, size: 8 },
+      { model: 'temple', x: -13, z: -16, size: 11, lab: true },
+      { model: 'pagoda', x: 14, z: -17, size: 6.5 },
+      { model: 'townhouse', x: -14, z: 0, size: 9 },
+      { model: 'townhouse', x: 14, z: 0, rot: 2, size: 9 },
+      { model: 'storehouse', x: -8, z: 7, size: 6 },
+      { model: 'farmhouse', x: 9, z: 7, size: 8 },
+      { model: 'bell-tower', x: 21, z: -6, size: 6.8, by: 'height' },
+      { model: 'market', x: -6, z: -1, size: 2.4 },
+      { model: 'market', x: 6, z: -1, rot: 2, size: 2.4 },
+      { model: 'river-boat', x: -10, z: 19, rot: 1, size: 7 },
+      { model: 'river-boat', x: 13, z: 21, rot: 1, size: 6 },
     ],
     props: [
-      { model: 'tree-street', x: -20, z: -12.5, size: 3 },
-      { model: 'tree-street', x: 9, z: -12.5, size: 3 },
-      { model: 'street-lamp', x: -1, z: -12, size: 5, by: 'height' },
+      { model: 'well', x: 0, z: 2, size: 1.8, by: 'height' },
+      { model: 'sakura', x: -21, z: -21, size: 5 },
+      { model: 'sakura', x: 21, z: 9, size: 4.6 },
+      { model: 'maple', x: -21, z: 8, size: 5 },
+      { model: 'maple', x: 21, z: -21, size: 4.6 },
+      { model: 'sakura', x: -3, z: 9, size: 3.2 },
     ],
-    walk: { x0: -20, x1: 20, z0: -7.5, z1: -3.5 },
-    water: { x0: -20, x1: 20, z0: -1, z1: 20 },
-    camera: { targetY: 2, height: 14 },
+    walk: { x0: -24, x1: 24, z0: -24, z1: 11 },
+    water: { x0: -25, x1: 25, z0: 15, z1: 25 },
+    camera: { targetY: 3, height: 14 },
   },
 
-  // ── 老城中心：downtown ───────────────────────────────────────
+  // ── 工业：港口城镇 ──────────────────────────────────────────
   3: {
     era: 3,
     ox: 0,
-    oz: -158,
+    oz: -160,
     width: 52,
     depth: 52,
+    base: 'cobble',
     ground: [
-      { x0: -26, x1: 26, z0: -26, z1: 26, color: 'sidewalk' },
-      road(-26, 26, -3, 3),
-      road(-3, 3, -26, 26),
-      { x0: -26, x1: -18, z0: 17, z1: 26, color: 'lawn' },
+      road(-26, 26, -9, -5),
+      road(-2, 2, -26, 8),
+      { x0: -26, x1: 26, z0: 6, z1: 9, color: 'brick' },
+      { x0: -13, x1: -10, z0: 8, z1: 22, color: 'pier', y: 0.3, h: 3.6 },
     ],
     buildings: [
-      { model: 'department-store', x: 12, z: 10, rot: 2, size: 16 },
-      { model: 'diner', x: 8, z: 21, rot: 2, size: 8 },
-      { model: 'parking-garage', x: -10, z: 10, size: 12 },
-      { model: 'fire-station', x: -21, z: 9, rot: 1, size: 8 },
-      { model: 'apartment', x: -12, z: -10, size: 16 },
-      { model: 'tenement', x: -20, z: -21.5, size: 9.2 },
-      { model: 'loft', x: 9.5, z: -9, size: 12 },
-      { model: 'corner-tenement', x: 21, z: -10, size: 13.2 },
-      { model: 'tenement', x: 9, z: -20.5, size: 9.2 },
+      { model: 'boiler-hall', x: -18, z: -17, size: 8 },
+      { model: 'boiler-hall', x: -9, z: -17, size: 8 },
+      { model: 'warehouse', x: 14, z: -18, size: 12 },
+      { model: 'tenement', x: -17, z: 0, size: 9.2 },
+      { model: 'loft', x: 11, z: 0, size: 12, lab: true },
+      { model: 'water-tower', x: 22, z: -2, size: 12, by: 'height' },
+      { model: 'silo', x: -6, z: 1, size: 8, by: 'height' },
+      { model: 'lighthouse', x: 20, z: 13, size: 8 },
+      { model: 'yard-crane', x: 1, z: 4, size: 5 },
+      { model: 'container', x: 6, z: 3.5, rot: 1, size: 5 },
+      { model: 'barge', x: -2, z: 17, rot: 1, size: 9 },
+      { model: 'fishing-boat', x: -17, z: 15, size: 6.8 },
     ],
     props: [
-      { model: 'tree-oak', x: -22, z: 22, size: 5 },
-      { model: 'tree-street', x: 4.5, z: 4.5, size: 3 },
-      { model: 'tree-street', x: -4.5, z: -4.5, size: 3 },
-      { model: 'tree-street', x: 20, z: 4.5, size: 3 },
-      { model: 'coupe', x: 1.4, z: -14, size: 4.5 },
-      { model: 'pickup', x: -14, z: -1.4, rot: 1, size: 4.8 },
-      { model: 'street-lamp', x: -4.2, z: 4.2, size: 5, by: 'height' },
+      { model: 'street-lamp', x: 3.2, z: -3.2, size: 5, by: 'height' },
+      { model: 'street-lamp', x: -3.2, z: -11, size: 5, by: 'height' },
+      { model: 'tree-street', x: -24, z: -24, size: 3 },
     ],
-    walk: { x0: -24, x1: 24, z0: -24, z1: 24 },
-    camera: { targetY: 9, height: 41 },
+    walk: { x0: -24, x1: 24, z0: -24, z1: 6 },
+    water: { x0: -25, x1: 25, z0: 10, z1: 25 },
+    camera: { targetY: 4, height: 20 },
   },
 
-  // ── 中央商务区：CBD ─────────────────────────────────────────
+  // ── 现代：大都市 ────────────────────────────────────────────
   4: {
     era: 4,
     ox: 0,
-    oz: -246,
+    oz: -248,
     width: 60,
     depth: 60,
+    base: 'plaza',
     ground: [
-      { x0: -30, x1: 30, z0: -30, z1: 30, color: 'plaza' },
-      { x0: -30, x1: 30, z0: -4, z1: 4, color: 'asphalt' },
-      { x0: -4, x1: 4, z0: -30, z1: 30, color: 'asphalt' },
+      road(-30, 30, -4, 4, 'asphalt'),
+      road(-4, 4, -30, 30, 'asphalt'),
       { x0: 6, x1: 28, z0: 22, z1: 28, color: 'lawn' },
     ],
     buildings: [
       { model: 'deco-tower', x: -15, z: -15, size: 16 },
-      { model: 'slab', x: 16, z: -16, size: 16 },
+      { model: 'slab', x: 16, z: -16, size: 16, lab: true },
       { model: 'office-tower', x: -23, z: 14, size: 8 },
       { model: 'office-tower', x: -11, z: 14, rot: 1, size: 8 },
       { model: 'bank', x: 14, z: 13, rot: 2, size: 12 },
@@ -193,6 +212,7 @@ export const DISTRICTS: Record<EraId, DistrictDef> = {
       { model: 'tree-street', x: 25, z: 25, size: 3 },
       { model: 'coupe', x: 1.8, z: 18, size: 4.5 },
       { model: 'coupe', x: -18, z: -1.8, rot: 1, size: 4.5 },
+      { model: 'pickup', x: 20, z: 1.8, rot: 1, size: 4.8 },
     ],
     walk: { x0: -27, x1: 27, z0: -27, z1: 27 },
     camera: { targetY: 16, height: 60 },

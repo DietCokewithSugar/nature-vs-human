@@ -1,298 +1,196 @@
 /**
- * Headless balance simulation. Plays the real logic core with a greedy bot and
- * reports when each era opens, when the bot evolves and when the ending lands.
+ * Headless balance simulation. A bot plays whole runs with the real logic core
+ * and reports when eras open, when the humans strike back, and how the run ends.
  *
- *   npm run sim                 # summary to stdout
- *   npm run sim -- --write      # also writes docs/balance-sim.json
+ *   npm run sim
  */
-import { writeFileSync } from 'node:fs';
 import {
+  BALANCE,
   CREATURES,
-  GENE_BY_ID,
   Game,
-  creatureCost,
-  genesFree,
-  geneLevel,
-  geneUnlocked,
-  incomePerSec,
+  SKILLS,
   computeMods,
-  type CreatureId,
-  type Decimal,
-  type UpgradeDef,
+  createState,
+  creatureCost,
+  incomePerSec,
+  skillStatus,
+  type ActiveId,
+  type Difficulty,
+  type GameState,
+  type RouteId,
 } from '../src/core/index.ts';
 
 export interface BotProfile {
   name: string;
   /** Clicks per second as a function of run time (s). */
-  cps: (runTime: number) => number;
-  /** Fraction of surges actually triggered by hand before 潮汐自律. */
-  surgeUse: number;
-  /** Evolve when the gene multiplier would grow by at least this factor. */
-  evolveRatio: number;
-  /** ...or by this smaller factor once the run has stalled for `stallSeconds`. */
-  stallRatio: number;
-  stallSeconds: number;
-  /** Seconds between shopping sessions (a player who only checks in now and then). */
+  cps: (t: number) => number;
+  /** Seconds between shopping sessions. */
   checkEvery: number;
-  /** Evolve once genes-per-hour of this run falls below this fraction of its peak. */
-  ratePeak?: number;
+  /** Uses active skills when ready. */
+  actives: boolean;
+  /** Buys anti-research and anti-taming skills when it can. */
+  defends: boolean;
 }
 
 export const PROFILES: BotProfile[] = [
-  {
-    name: 'engaged',
-    cps: (t) => (t < 180 ? 6 : 1),
-    surgeUse: 1,
-    evolveRatio: 2.2,
-    stallRatio: 1.4,
-    stallSeconds: 900,
-    checkEvery: 0,
-    ratePeak: 0.85,
-  },
-  {
-    name: 'casual',
-    cps: (t) => (t < 120 ? 3 : 0.2),
-    surgeUse: 0.3,
-    evolveRatio: 3,
-    stallRatio: 1.6,
-    stallSeconds: 1800,
-    checkEvery: 60,
-  },
-  {
-    name: 'idle',
-    cps: (t) => (t < 60 ? 3 : 0),
-    surgeUse: 0.1,
-    evolveRatio: 3,
-    stallRatio: 2,
-    stallSeconds: 3600,
-    checkEvery: 300,
-  },
+  { name: 'engaged', cps: (t) => (t < 120 ? 6 : 1), checkEvery: 0, actives: true, defends: true },
+  { name: 'casual', cps: (t) => (t < 90 ? 3 : 0.3), checkEvery: 45, actives: true, defends: true },
+  { name: 'idle', cps: (t) => (t < 60 ? 3 : 0), checkEvery: 180, actives: false, defends: false },
 ];
 
-const GENE_PRIORITY = [
-  'muscle', 'select', 'headstart', 'auto1', 'queen', 'moon', 'auto2', 'autosurge', 'select',
-  'mutation', 'ticket', 'headstart', 'memory', 'auto3', 'select', 'mutation', 'auto4', 'headstart',
-  'memory', 'select', 'mutation',
-];
-
-interface Sample {
-  t: number;
-  lifetime: number;
-  income: number;
-  era: number;
-  genes: number;
-}
-
-export interface SimResult {
+export interface RunLog {
   profile: string;
-  eraFirst: Record<number, number | null>;
-  evolutions: { t: number; runTime: number; gained: number; genes: number; era: number }[];
-  endedAt: number | null;
-  samples: Sample[];
-  finalLifetimeLog10: number;
+  difficulty: Difficulty;
+  won: boolean;
+  time: number;
+  eras: Record<number, number | null>;
+  countermeasures: { t: number; cls: string }[];
+  defected: { t: number; id: string }[];
+  research: number;
+  progress: number;
+  points: number;
+  samples: { t: number; earned: number; research: number }[];
 }
 
-function log10(d: Decimal): number {
-  return d.gt(0) ? d.log10() : 0;
-}
+const DEFENSIVE = new Set(['ge_night', 'ge_disguise', 'ge_wipe', 'hu_wild', 'hu_rescue', 'ge_sabotage', 'as_resist', 'tk_hide']);
 
 function incomeWith(game: Game, apply: () => void, revert: () => void): number {
   apply();
-  const mods = computeMods(game.state);
-  const v = incomePerSec(game.state, mods).toNumber();
+  const v = incomePerSec(game.state.run, computeMods(game.state)).toNumber();
   revert();
   return v;
 }
 
-function creatureGain(game: Game, id: CreatureId, base: number): number {
-  const c = game.state.creatures[id];
-  return incomeWith(
-    game,
-    () => {
-      c.bought += 1;
-    },
-    () => {
-      c.bought -= 1;
-    },
-  ) - base;
-}
-
-function upgradeGain(game: Game, u: UpgradeDef, base: number): number {
-  return incomeWith(
-    game,
-    () => {
-      game.state.upgrades[u.id] = true;
-    },
-    () => {
-      delete game.state.upgrades[u.id];
-    },
-  ) - base;
-}
-
-const PRIORITY_KINDS = new Set(['era', 'breeding', 'tide', 'ending']);
-
-export function simulate(profile: BotProfile, maxHours = 30): SimResult {
-  const game = new Game();
-  const s = game.state;
-  const result: SimResult = {
+export function simulate(profile: BotProfile, difficulty: Difficulty = 'normal', route: RouteId = 'beasts', state?: GameState): RunLog {
+  const base = state ?? createState();
+  // Simulate every difficulty without having to win the earlier ones first.
+  base.meta.wins = { normal: 1, hard: 1, brutal: 1 };
+  const game = new Game(base);
+  if (!game.startRun(route, difficulty)) throw new Error(`cannot start ${route}/${difficulty}`);
+  const log: RunLog = {
     profile: profile.name,
-    eraFirst: { 1: 0, 2: null, 3: null, 4: null },
-    evolutions: [],
-    endedAt: null,
+    difficulty,
+    won: false,
+    time: 0,
+    eras: { 1: 0, 2: null, 3: null, 4: null },
+    countermeasures: [],
+    defected: [],
+    research: 0,
+    progress: 0,
+    points: 0,
     samples: [],
-    finalLifetimeLog10: 0,
   };
   game.on((e) => {
-    if (e.type === 'eraUnlocked' && e.first) result.eraFirst[e.era] = s.playTime;
-    if (e.type === 'ending') result.endedAt = s.playTime;
+    const t = game.run.time;
+    if (e.type === 'eraUnlocked') log.eras[e.era] = t;
+    if (e.type === 'countermeasure') log.countermeasures.push({ t, cls: e.cm.cls });
+    if (e.type === 'defected') log.defected.push({ t, id: e.id });
   });
 
-  let lastPurchase = 0;
-  let nextSample = 0;
-  let surgeToggle = 0;
   let nextCheck = 0;
-  let peakRate = 0;
-  const limit = maxHours * 3600;
+  let nextSample = 0;
+  const run = () => game.run;
 
-  while (s.playTime < limit) {
-    const step = s.runTime < 900 ? 1 : 4;
+  while (game.running && run().time < 4 * 3600) {
+    const step = 1;
+    const r = run();
+    const clicks = profile.cps(r.time) * step;
+    for (let i = 0; i < Math.min(clicks, 6); i++) game.click();
 
-    // Clicks
-    const clicks = profile.cps(s.runTime) * step;
-    if (clicks > 0) {
-      const v = game.clickValue();
-      s.money = s.money.add(v.mul(clicks));
-      s.runEarned = s.runEarned.add(v.mul(clicks));
-      s.lifetimeEarned = s.lifetimeEarned.add(v.mul(clicks));
-      s.clicks += clicks;
+    if (profile.actives) for (const id of ['surge', 'rescue', 'rampage', 'sabotage'] as ActiveId[]) {
+      if (id === 'rescue' && Object.values(r.taming).every((v) => (v ?? 0) < 0.3)) continue;
+      game.activate(id);
     }
 
-    // Surges by hand
-    if (game.mods.tide && !game.mods.autoSurge && s.tide.cooldownLeft <= 0 && s.tide.surgeLeft <= 0) {
-      surgeToggle += profile.surgeUse;
-      if (surgeToggle >= 1) {
-        surgeToggle -= 1;
-        game.surge();
-      } else {
-        s.tide.cooldownLeft = game.mods.surgeCooldown; // a missed window
+    if (r.time >= nextCheck) {
+      nextCheck = r.time + profile.checkEvery;
+      for (let guard = 0; guard < 300; guard++) {
+        const income = Math.max(game.income().toNumber(), 1e-9);
+        const money = r.money.toNumber();
+        // Era tickets first.
+        const ticket = game.availableUpgrades().find((u) => u.kind === 'era' && game.upgradeCost(u.id).toNumber() <= money);
+        if (ticket) {
+          game.buyUpgrade(ticket.id);
+          continue;
+        }
+        // Defensive and mechanic skills when cheap enough.
+        const mods = game.mods;
+        const urgent = SKILLS.find((s) => {
+          if (skillStatus(r, mods, s) !== 'available' || s.fork?.side === 'B') return false;
+          const cost = game.skillCost(s.id).toNumber();
+          const mechanic = s.effects.some((e) => ['unlockBreeding', 'unlockTide', 'unlockActive', 'convert'].includes(e.type));
+          const defensive = profile.defends && DEFENSIVE.has(s.id);
+          return (mechanic || defensive) && cost <= money * 0.6;
+        });
+        if (urgent) {
+          game.buySkill(urgent.id);
+          continue;
+        }
+        if (game.mods.breeding && game.nestCost().toNumber() <= money * 0.05) {
+          game.buyNest();
+          continue;
+        }
+        let best: { cost: number; act: () => void; score: number } | null = null;
+        const consider = (cost: number, gain: number, act: () => void) => {
+          if (!(gain > 0)) return;
+          const score = Math.max(0, (cost - money) / income) + cost / gain;
+          if (!best || score < best.score) best = { cost, act, score };
+        };
+        for (const c of CREATURES) {
+          if (c.era > r.era || r.defected[c.id] !== undefined) continue;
+          const cost = creatureCost(c.id, r.creatures[c.id].bought).toNumber();
+          const cs = r.creatures[c.id];
+          consider(cost, incomeWith(game, () => cs.bought++, () => cs.bought--) - income, () => game.buyCreature(c.id, 1));
+        }
+        for (const u of game.availableUpgrades()) {
+          if (u.kind === 'era') continue;
+          consider(u.cost, incomeWith(game, () => (r.upgrades[u.id] = true), () => delete r.upgrades[u.id]) - income, () =>
+            game.buyUpgrade(u.id),
+          );
+        }
+        for (const s of SKILLS) {
+          if (skillStatus(r, mods, s) !== 'available' || s.fork?.side === 'B') continue;
+          const gain = s.effects.some((e) => e.type === 'clickPct' || e.type === 'clickMult')
+            ? income * 0.03
+            : incomeWith(game, () => (r.skills[s.id] = true), () => delete r.skills[s.id]) - income;
+          consider(s.cost, gain, () => game.buySkill(s.id));
+        }
+        const pick = best as { cost: number; act: () => void } | null;
+        if (!pick || pick.cost > money) break;
+        pick.act();
       }
-    }
-
-    // Purchases
-    const shopping = s.runTime < 600 || s.playTime >= nextCheck;
-    if (shopping) nextCheck = s.playTime + profile.checkEvery;
-    for (let guard = 0; shopping && guard < 200; guard++) {
-      const income = Math.max(game.income().toNumber(), 1e-9);
-      const money = s.money.toNumber();
-      const ups = game.availableUpgrades();
-
-      const urgent = ups.find((u) => PRIORITY_KINDS.has(u.kind) && game.upgradeCost(u.id).lte(s.money));
-      if (urgent) {
-        game.buyUpgrade(urgent.id);
-        lastPurchase = s.playTime;
-        continue;
-      }
-      if (game.mods.breeding && game.queenCost().lte(s.money.mul(0.02))) {
-        game.buyQueen();
-        continue;
-      }
-
-      let best: { cost: number; act: () => void; score: number } | null = null;
-      const consider = (cost: number, gain: number, act: () => void) => {
-        if (!(gain > 0)) return;
-        const score = Math.max(0, (cost - money) / income) + cost / gain;
-        if (!best || score < best.score) best = { cost, act, score };
-      };
-      for (const c of CREATURES) {
-        if (c.era > s.era) continue;
-        const cost = creatureCost(c.id, s.creatures[c.id].bought).toNumber();
-        consider(cost, creatureGain(game, c.id, income), () => game.buyCreature(c.id, 1));
-      }
-      for (const u of ups) {
-        if (PRIORITY_KINDS.has(u.kind)) continue;
-        const cost = game.upgradeCost(u.id).toNumber();
-        const gain = u.kind === 'click' ? income * 0.02 : upgradeGain(game, u, income);
-        consider(cost, gain, () => game.buyUpgrade(u.id));
-      }
-      const pick = best as { cost: number; act: () => void; score: number } | null;
-      if (!pick || pick.cost > money) break;
-      pick.act();
-      lastPurchase = s.playTime;
     }
 
     game.advance(step);
-
-    // Evolution
-    const gain = game.genesOnEvolve();
-    if (gain >= 1 && s.runTime > 600) {
-      const power = game.mods.genePower;
-      const ratio = (1 + (s.genes + gain) * power) / (1 + s.genes * power);
-      const stalled = s.playTime - lastPurchase > profile.stallSeconds;
-      const rate = gain / s.runTime;
-      peakRate = Math.max(peakRate, rate);
-      const byRate = profile.ratePeak !== undefined && ratio >= 1.3 && rate < peakRate * profile.ratePeak;
-      const byRatio = profile.ratePeak === undefined && ratio >= profile.evolveRatio;
-      if (byRate || byRatio || (stalled && ratio >= profile.stallRatio)) {
-        peakRate = 0;
-        const era = s.era;
-        const runTime = s.runTime;
-        game.evolve();
-        result.evolutions.push({ t: s.playTime, runTime, gained: gain, genes: s.genes, era });
-        for (let pass = 0; pass < 40; pass++) {
-          const id = GENE_PRIORITY.find((g) => {
-            const def = GENE_BY_ID[g];
-            if (!def || !geneUnlocked(s, def)) return false;
-            const next = def.levels[geneLevel(s, g)];
-            return !!next && next.cost <= genesFree(s);
-          });
-          if (!id) break;
-          game.buyGene(id);
-        }
-        lastPurchase = s.playTime;
-      }
+    if (r.time >= nextSample) {
+      log.samples.push({ t: r.time, earned: r.earned.gt(0) ? r.earned.log10() : 0, research: r.research });
+      nextSample += 30;
     }
-
-    if (s.playTime >= nextSample) {
-      result.samples.push({
-        t: s.playTime,
-        lifetime: log10(s.lifetimeEarned),
-        income: log10(game.income()),
-        era: s.era,
-        genes: s.genes,
-      });
-      nextSample += 120;
-    }
-    if (result.endedAt !== null && s.playTime > result.endedAt + 600) break;
   }
-  result.finalLifetimeLog10 = log10(s.lifetimeEarned);
-  return result;
+  const r = run();
+  log.won = r.result?.won ?? false;
+  log.time = r.time;
+  log.research = r.research;
+  log.progress = game.billProgress();
+  log.points = r.result?.points ?? 0;
+  return log;
 }
 
-function h(t: number | null): string {
-  if (t === null) return '—';
-  const hours = t / 3600;
-  return hours < 1 ? `${Math.round(t / 60)} 分钟` : `${hours.toFixed(1)} 小时`;
+function m(t: number | null): string {
+  return t === null ? '—' : `${(t / 60).toFixed(1)}m`;
 }
 
 function main() {
-  const write = process.argv.includes('--write');
-  const results = PROFILES.map((p) => simulate(p));
-  for (const r of results) {
-    console.log(`\n=== ${r.profile} ===`);
-    console.log(
-      `海啸 ${h(r.eraFirst[2] ?? null)} | 兽群 ${h(r.eraFirst[3] ?? null)} | 远古 ${h(r.eraFirst[4] ?? null)} | 结局 ${h(r.endedAt)}`,
-    );
-    for (const e of r.evolutions) {
+  const diffs = (process.argv.find((a) => a.startsWith('--diff='))?.slice(7).split(',') ?? ['normal']) as Difficulty[];
+  for (const d of diffs) {
+    for (const p of PROFILES) {
+      const r = simulate(p, d);
       console.log(
-        `  进化 @${h(e.t)}  本轮 ${h(e.runTime)}  时代 ${e.era}  +${e.gained} 基因 → ${e.genes}`,
+        `${d.padEnd(6)} ${p.name.padEnd(8)} ${r.won ? 'WIN ' : 'LOSE'} ${m(r.time).padStart(6)} | 古代 ${m(r.eras[2] ?? null)} 工业 ${m(r.eras[3] ?? null)} 现代 ${m(r.eras[4] ?? null)} | 研究 ${(r.research * 100).toFixed(0)}% 账单 ${(r.progress * 100).toFixed(0)}% | 反制 ${r.countermeasures.map((c) => `${c.cls}@${m(c.t)}`).join(' ')} | 跳反 ${r.defected.map((x) => `${x.id}@${m(x.t)}`).join(' ') || '无'} | +${r.points}点`,
       );
     }
-    console.log(`  累计破坏 1e${r.finalLifetimeLog10.toFixed(1)}`);
   }
-  if (write) {
-    writeFileSync(new URL('../docs/balance-sim.json', import.meta.url), JSON.stringify(results, null, 1));
-    console.log('\nwrote docs/balance-sim.json');
-  }
+  void BALANCE;
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) main();

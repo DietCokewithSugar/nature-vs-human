@@ -1,34 +1,52 @@
-import { D, ZERO } from './bignum.ts';
+import { D, ZERO, type Decimal } from './bignum.ts';
 import { CREATURE_IDS } from './config/creatures.ts';
-import { createState, SAVE_VERSION, type GameState } from './state.ts';
-import type { EraId } from './types.ts';
+import { META_BY_ID, ROUTES } from './config/meta.ts';
+import { SKILL_BY_ID } from './config/skills.ts';
+import { UPGRADE_BY_ID } from './config/upgrades.ts';
+import { createMeta, createRun, SAVE_VERSION, type GameState, type MetaState, type RunState } from './state.ts';
+import { CLASS_IDS, DIFFICULTIES, type ActiveId, type CreatureId, type Difficulty, type EraId, type RouteId } from './types.ts';
 
-/** JSON-safe snapshot. Decimals are stored as strings. */
-export interface SaveData extends Omit<GameState, 'money' | 'runEarned' | 'lifetimeEarned' | 'bestRunLog10'> {
-  money: string;
-  runEarned: string;
-  lifetimeEarned: string;
-  bestRunLog10: number | null;
-  savedAt: number;
+type Json = Record<string, unknown>;
+
+// ── Serialise ──────────────────────────────────────────────────
+
+function decimals<T extends object>(obj: T): Json {
+  const out: Json = {};
+  for (const [k, v] of Object.entries(obj)) out[k] = v && typeof v === 'object' && 'mantissa' in v ? String(v) : v;
+  return out;
 }
 
-export function serialize(state: GameState, now = Date.now()): SaveData {
+export function serialize(state: GameState, now = Date.now()): Json {
   return {
-    ...state,
-    money: state.money.toString(),
-    runEarned: state.runEarned.toString(),
-    lifetimeEarned: state.lifetimeEarned.toString(),
-    bestRunLog10: Number.isFinite(state.bestRunLog10) ? state.bestRunLog10 : null,
+    version: state.version,
     savedAt: now,
+    meta: decimals(state.meta),
+    run: decimals(state.run),
   };
 }
 
-type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
+// ── Migrations ─────────────────────────────────────────────────
+
+type Migration = (raw: Json) => Json;
 
 /** MIGRATIONS[n] upgrades a version-n save to version n + 1. */
-const MIGRATIONS: Record<number, Migration> = {};
+const MIGRATIONS: Record<number, Migration> = {
+  // v1 was the endless idle prototype. Keep lifetime damage and turn genes into meta points.
+  1: (raw) => {
+    const genes = num(raw.genes);
+    return {
+      version: 2,
+      meta: { ...createMetaJson(), lifetime: raw.lifetimeEarned ?? '0', points: Math.min(60, Math.floor(Math.sqrt(genes) * 3)) },
+      run: null,
+    };
+  },
+};
 
-function migrate(raw: Record<string, unknown>): Record<string, unknown> {
+function createMetaJson(): Json {
+  return decimals(createMeta());
+}
+
+function migrate(raw: Json): Json {
   let data = raw;
   let v = typeof data.version === 'number' ? data.version : 1;
   while (v < SAVE_VERSION) {
@@ -41,11 +59,21 @@ function migrate(raw: Record<string, unknown>): Record<string, unknown> {
   return data;
 }
 
+// ── Parse (untrusted input) ────────────────────────────────────
+
 function num(v: unknown, fallback = 0): number {
   return typeof v === 'number' && Number.isFinite(v) ? v : fallback;
 }
 
-function dec(v: unknown) {
+function int(v: unknown, fallback = 0): number {
+  return Math.max(0, Math.floor(num(v, fallback)));
+}
+
+function unit(v: unknown): number {
+  return Math.max(0, Math.min(1, num(v)));
+}
+
+function dec(v: unknown): Decimal {
   if (typeof v !== 'string' && typeof v !== 'number') return ZERO;
   const d = D(v);
   return Number.isFinite(d.mantissa) && Number.isFinite(d.exponent) && d.gte(0) ? d : ZERO;
@@ -56,55 +84,95 @@ function era(v: unknown): EraId {
   return (n >= 1 && n <= 4 ? Math.floor(n) : 1) as EraId;
 }
 
+function obj(v: unknown): Json {
+  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {};
+}
+
+function difficulty(v: unknown): Difficulty {
+  return DIFFICULTIES.includes(v as Difficulty) ? (v as Difficulty) : 'normal';
+}
+
+function parseMeta(raw: Json): MetaState {
+  const m = createMeta();
+  m.points = int(raw.points);
+  m.spent = Math.min(m.points, int(raw.spent));
+  for (const [k, v] of Object.entries(obj(raw.levels))) {
+    const def = META_BY_ID[k];
+    if (def) m.levels[k] = Math.min(def.levels.length, int(v));
+  }
+  const wins = obj(raw.wins);
+  const fastest = obj(raw.fastest);
+  for (const d of DIFFICULTIES) {
+    m.wins[d] = int(wins[d]);
+    m.fastest[d] = typeof fastest[d] === 'number' && (fastest[d] as number) > 0 ? (fastest[d] as number) : null;
+  }
+  m.lifetime = dec(raw.lifetime);
+  m.bestRunLog10 = Math.max(0, num(raw.bestRunLog10));
+  m.runs = int(raw.runs);
+  m.playTime = Math.max(0, num(raw.playTime));
+  return m;
+}
+
+function parseRun(raw: Json): RunState {
+  const route: RouteId = raw.route === 'plague' && ROUTES.plague ? 'plague' : 'beasts';
+  const r = createRun(route, difficulty(raw.difficulty));
+  r.money = dec(raw.money);
+  r.earned = dec(raw.earned);
+  const creatures = obj(raw.creatures);
+  for (const id of CREATURE_IDS) {
+    const c = obj(creatures[id]);
+    r.creatures[id] = { bought: int(c.bought), bred: Math.max(0, num(c.bred)) };
+  }
+  for (const [k, v] of Object.entries(obj(raw.upgrades))) if (v === true && UPGRADE_BY_ID[k]) r.upgrades[k] = true;
+  for (const [k, v] of Object.entries(obj(raw.skills))) if (v === true && SKILL_BY_ID[k]) r.skills[k] = true;
+  r.nests = int(raw.nests);
+  const tide = obj(raw.tide);
+  r.tide = { clock: Math.max(0, num(tide.clock)), surgeLeft: Math.max(0, num(tide.surgeLeft)) };
+  r.era = era(raw.era);
+  r.research = unit(raw.research);
+  if (Array.isArray(raw.countermeasures)) {
+    for (const c of raw.countermeasures.slice(0, 8)) {
+      const cm = obj(c);
+      if (CLASS_IDS.includes(cm.cls as never)) {
+        r.countermeasures.push({ cls: cm.cls as (typeof CLASS_IDS)[number], era: era(cm.era), at: Math.max(0, num(cm.at)) });
+      }
+    }
+  }
+  for (const [k, v] of Object.entries(obj(raw.taming))) {
+    if (CREATURE_IDS.includes(k as CreatureId)) r.taming[k as CreatureId] = unit(v);
+  }
+  for (const [k, v] of Object.entries(obj(raw.defected))) {
+    if (CREATURE_IDS.includes(k as CreatureId)) r.defected[k as CreatureId] = int(v);
+  }
+  for (const [k, v] of Object.entries(obj(raw.cooldowns))) {
+    if (['surge', 'rescue', 'rampage', 'sabotage'].includes(k)) r.cooldowns[k as ActiveId] = Math.max(0, num(v));
+  }
+  r.rampageLeft = Math.max(0, num(raw.rampageLeft));
+  r.clicks = int(raw.clicks);
+  r.time = Math.max(0, num(raw.time));
+  const res = raw.result ? obj(raw.result) : null;
+  r.result = res
+    ? { won: res.won === true, time: Math.max(0, num(res.time)), points: int(res.points), earnedLog10: Math.max(0, num(res.earnedLog10)) }
+    : null;
+  return r;
+}
+
 /** Parse untrusted save data into a valid state. Unknown fields are dropped, missing ones defaulted. */
 export function deserialize(input: unknown): GameState {
   if (!input || typeof input !== 'object') throw new Error('Save is not an object');
-  const raw = migrate({ ...(input as Record<string, unknown>) });
-  if (typeof raw.version === 'number' && raw.version > SAVE_VERSION) {
-    throw new Error('Save comes from a newer version');
-  }
-  const s = createState();
-  s.money = dec(raw.money);
-  s.runEarned = dec(raw.runEarned);
-  s.lifetimeEarned = dec(raw.lifetimeEarned);
-
-  const creatures = (raw.creatures ?? {}) as Record<string, { bought?: unknown; bred?: unknown }>;
-  for (const id of CREATURE_IDS) {
-    const c = creatures[id];
-    s.creatures[id] = { bought: Math.max(0, Math.floor(num(c?.bought))), bred: Math.max(0, num(c?.bred)) };
-  }
-  const upgrades = (raw.upgrades ?? {}) as Record<string, unknown>;
-  for (const [k, v] of Object.entries(upgrades)) if (v === true) s.upgrades[k] = true;
-  const genes = (raw.geneLevels ?? {}) as Record<string, unknown>;
-  for (const [k, v] of Object.entries(genes)) s.geneLevels[k] = Math.max(0, Math.floor(num(v)));
-
-  const tide = (raw.tide ?? {}) as Record<string, unknown>;
-  s.tide = { clock: num(tide.clock), surgeLeft: num(tide.surgeLeft), cooldownLeft: num(tide.cooldownLeft) };
-
-  const auto = (raw.autobuy ?? {}) as Record<string, unknown>;
-  for (const e of [1, 2, 3, 4] as EraId[]) s.autobuy[e] = auto[e] !== false;
-
-  s.queens = Math.max(0, Math.floor(num(raw.queens)));
-  s.era = era(raw.era);
-  s.bestEra = era(raw.bestEra);
-  s.genes = Math.max(0, Math.floor(num(raw.genes)));
-  s.genesSpent = Math.max(0, Math.floor(num(raw.genesSpent)));
-  s.evolutions = Math.max(0, Math.floor(num(raw.evolutions)));
-  s.clicks = Math.max(0, Math.floor(num(raw.clicks)));
-  s.playTime = Math.max(0, num(raw.playTime));
-  s.runTime = Math.max(0, num(raw.runTime));
-  s.dinoAt = typeof raw.dinoAt === 'number' ? raw.dinoAt : null;
-  s.endedAt = typeof raw.endedAt === 'number' ? raw.endedAt : null;
-  s.bestRunLog10 = typeof raw.bestRunLog10 === 'number' ? raw.bestRunLog10 : Number.NEGATIVE_INFINITY;
-  return s;
+  const raw = migrate({ ...(input as Json) });
+  if (typeof raw.version === 'number' && raw.version > SAVE_VERSION) throw new Error('Save comes from a newer version');
+  return {
+    version: SAVE_VERSION,
+    meta: parseMeta(obj(raw.meta)),
+    run: raw.run ? parseRun(obj(raw.run)) : createRun(),
+  };
 }
 
-const EXPORT_PREFIX = 'HB1:';
+const EXPORT_PREFIX = 'HB2:';
 
-/** Portable save string for export/import. */
 export function exportSave(state: GameState): string {
-  const json = JSON.stringify(serialize(state));
-  const bytes = new TextEncoder().encode(json);
+  const bytes = new TextEncoder().encode(JSON.stringify(serialize(state)));
   let bin = '';
   for (const b of bytes) bin += String.fromCharCode(b);
   return EXPORT_PREFIX + btoa(bin);
@@ -112,8 +180,9 @@ export function exportSave(state: GameState): string {
 
 export function importSave(text: string): GameState {
   const trimmed = text.trim();
-  if (!trimmed.startsWith(EXPORT_PREFIX)) throw new Error('Not a save string');
-  const bin = atob(trimmed.slice(EXPORT_PREFIX.length));
+  const prefix = trimmed.startsWith('HB2:') ? 'HB2:' : trimmed.startsWith('HB1:') ? 'HB1:' : null;
+  if (!prefix) throw new Error('Not a save string');
+  const bin = atob(trimmed.slice(prefix.length));
   const bytes = Uint8Array.from(bin, (ch) => ch.charCodeAt(0));
   return deserialize(JSON.parse(new TextDecoder().decode(bytes)));
 }

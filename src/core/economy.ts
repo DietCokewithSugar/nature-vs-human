@@ -4,8 +4,8 @@ import { CREATURE_BY_ID, CREATURES } from './config/creatures.ts';
 import { breedRate } from './mechanics/breeding.ts';
 import { tideMult } from './mechanics/tide.ts';
 import type { Mods } from './modifiers.ts';
-import type { GameState } from './state.ts';
-import type { CreatureId, UpgradeDef } from './types.ts';
+import type { RunState } from './state.ts';
+import type { CreatureId, UnitClass } from './types.ts';
 
 const R = BALANCE.costGrowth;
 
@@ -23,18 +23,6 @@ export function creatureCostN(id: CreatureId, bought: number, n: number): Decima
   return creatureCost(id, bought).mul(D(R).pow(n).sub(1)).div(R - 1);
 }
 
-/** max = ⌊log_r( c(r − 1) / (b·r^k) + 1 )⌋ */
-export function maxAffordable(id: CreatureId, bought: number, money: Decimal): number {
-  const next = creatureCost(id, bought);
-  if (!canAfford(next, money)) return 0;
-  const x = money.mul(R - 1).div(next).add(1);
-  const n = Math.floor(x.log10() / Math.log10(R));
-  // Guard against floating error at the boundary.
-  if (!canAfford(creatureCostN(id, bought, n), money)) return Math.max(0, n - 1);
-  if (canAfford(creatureCostN(id, bought, n + 1), money)) return n + 1;
-  return Math.max(0, n);
-}
-
 /** Affordability with a relative epsilon, so 15.000000000000002 ≤ 15 holds. */
 export function canAfford(cost: Decimal, money: Decimal): boolean {
   return cost.lte(money.mul(1 + 1e-9));
@@ -46,9 +34,15 @@ export function pay(money: Decimal, cost: Decimal): Decimal {
   return left.lt(0) ? ZERO : left;
 }
 
-export function upgradeCost(def: UpgradeDef, mods: Mods): Decimal {
-  const base = D(def.cost);
-  return def.kind === 'era' ? base.mul(mods.ticketDiscount) : base;
+/** max = ⌊log_r( c(r − 1) / (b·r^k) + 1 )⌋ */
+export function maxAffordable(id: CreatureId, bought: number, money: Decimal): number {
+  const next = creatureCost(id, bought);
+  if (!canAfford(next, money)) return 0;
+  const x = money.mul(R - 1).div(next).add(1);
+  const n = Math.floor(x.log10() / Math.log10(R));
+  if (!canAfford(creatureCostN(id, bought, n), money)) return Math.max(0, n - 1);
+  if (canAfford(creatureCostN(id, bought, n + 1), money)) return n + 1;
+  return Math.max(0, n);
 }
 
 // ── Production ─────────────────────────────────────────────────
@@ -64,73 +58,64 @@ export function nextMilestone(bought: number): number | null {
   return null;
 }
 
-/** Output of one unit, before tide. */
-export function unitProd(state: GameState, mods: Mods, id: CreatureId): Decimal {
+/** Megafauna fade as the humans move on. */
+export function obsolescence(run: RunState, id: CreatureId): number {
   const def = CREATURE_BY_ID[id];
-  const c = state.creatures[id];
-  const mult =
+  if (!def.ancient || run.era <= def.era) return 1;
+  return BALANCE.obsolete ** (run.era - def.era);
+}
+
+/** Output of one unit, before tide. */
+export function unitProd(run: RunState, mods: Mods, id: CreatureId): Decimal {
+  const def = CREATURE_BY_ID[id];
+  const c = run.creatures[id];
+  let mult =
     BALANCE.milestoneMult ** milestonesReached(c.bought) *
     mods.creatureMult[id] *
-    mods.eraMult[def.era] *
+    mods.classMult[def.cls] *
     mods.globalMult *
-    mods.geneMult;
+    obsolescence(run, id);
+  if (def.cls === 'tank' && run.rampageLeft > 0) mult *= BALANCE.actives.rampage.mult;
   return D(def.baseProd).mul(mult);
 }
 
-export function creatureAmount(state: GameState, id: CreatureId): number {
-  const c = state.creatures[id];
-  return c.bought + c.bred;
-}
-
-/** Instantaneous output of all units of one creature. */
-export function creatureProd(state: GameState, mods: Mods, id: CreatureId): Decimal {
-  const amount = creatureAmount(state, id);
+export function creatureProd(run: RunState, mods: Mods, id: CreatureId): Decimal {
+  const c = run.creatures[id];
+  const amount = c.bought + c.bred;
   if (amount <= 0) return ZERO;
-  let p = unitProd(state, mods, id).mul(amount);
-  if (CREATURE_BY_ID[id].era === 2) p = p.mul(tideMult(state.tide, mods));
+  let p = unitProd(run, mods, id).mul(amount);
+  if (CREATURE_BY_ID[id].cls === 'marine') p = p.mul(tideMult(run.tide, mods));
   return p;
 }
 
-export function incomePerSec(state: GameState, mods: Mods): Decimal {
+export function incomePerSec(run: RunState, mods: Mods): Decimal {
   let total = ZERO;
-  for (const c of CREATURES) total = total.add(creatureProd(state, mods, c.id));
+  for (const c of CREATURES) total = total.add(creatureProd(run, mods, c.id));
   return total;
 }
 
-export function clickValue(state: GameState, mods: Mods): Decimal {
+export function classIncome(run: RunState, mods: Mods): Record<UnitClass, Decimal> {
+  const out: Record<UnitClass, Decimal> = { assassin: ZERO, swarm: ZERO, hunter: ZERO, tank: ZERO, marine: ZERO };
+  for (const c of CREATURES) out[c.cls] = out[c.cls].add(creatureProd(run, mods, c.id));
+  return out;
+}
+
+export function clickValue(run: RunState, mods: Mods): Decimal {
   const base = D(BALANCE.click.base * mods.clickMult);
   if (mods.clickPct <= 0) return base;
-  return base.add(incomePerSec(state, mods).mul(mods.clickPct));
+  return base.add(incomePerSec(run, mods).mul(mods.clickPct));
 }
 
-/** Breeding output per second per insect type, for display. */
-export function bredPerSec(state: GameState, mods: Mods, id: CreatureId): number {
-  if (CREATURE_BY_ID[id].era !== 1) return 0;
-  return state.creatures[id].bought * breedRate(state, mods);
+/** Bred units per second for one swarm species, for display. */
+export function bredPerSec(run: RunState, mods: Mods, id: CreatureId): number {
+  if (CREATURE_BY_ID[id].cls !== 'swarm') return 0;
+  return run.creatures[id].bought * breedRate(run, mods);
 }
 
-// ── Prestige ───────────────────────────────────────────────────
+// ── Meta ───────────────────────────────────────────────────────
 
-/** Genes after the softcap. Linear up to the cap, then square-root-ish. */
-export function effectiveGenes(genes: number): number {
-  const { softcap, softcapExp } = BALANCE.genes;
-  if (genes <= softcap) return genes;
-  return softcap * (genes / softcap) ** softcapExp;
-}
-
-/** Total genes a lifetime of damage is worth: ⌊∛(lifetime / base)⌋. */
-export function genesForLifetime(lifetime: Decimal): number {
-  if (lifetime.lte(0)) return 0;
-  const l = lifetime.log10() - Math.log10(BALANCE.genes.base);
-  if (l < 0) return 0;
-  return Math.floor(10 ** (l / 3) + 1e-9);
-}
-
-export function genesOnEvolve(state: GameState): number {
-  return Math.max(0, genesForLifetime(state.lifetimeEarned) - state.genes);
-}
-
-/** Lifetime damage needed to reach a given total gene count. */
-export function lifetimeForGenes(genes: number): Decimal {
-  return D(BALANCE.genes.base).mul(D(genes).pow(3));
+/** Points earned at the end of a run. */
+export function runPoints(progress: number, won: boolean, difficultyPoints: number): number {
+  const M = BALANCE.meta;
+  return Math.round((M.base + M.perProgress * progress + (won ? M.winBonus : 0)) * difficultyPoints);
 }

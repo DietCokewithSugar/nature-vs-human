@@ -1,14 +1,14 @@
 import { D, type Decimal } from '../bignum.ts';
 import { BALANCE } from '../config/balance.ts';
 import type { Mods } from '../modifiers.ts';
-import type { GameState } from '../state.ts';
+import type { RunState } from '../state.ts';
 
-/** Bred units per second, per bought insect. */
-export function breedRate(state: GameState, mods: Mods): number {
+/** Bred swarm units per second, per bought unit. Growth of the growth: a derivative economy. */
+export function breedRate(run: RunState, mods: Mods): number {
   if (!mods.breeding) return 0;
-  return BALANCE.breeding.ratePerQueen * state.queens * mods.breedMult;
+  return BALANCE.breeding.ratePerNest * run.nests * mods.breedMult;
 }
 
-export function queenCost(queens: number): Decimal {
-  return D(BALANCE.breeding.queenBaseCost).mul(D(BALANCE.breeding.queenCostGrowth).pow(queens));
+export function nestCost(nests: number): Decimal {
+  return D(BALANCE.breeding.nestBaseCost).mul(D(BALANCE.breeding.nestCostGrowth).pow(Math.max(0, nests - 1)));
 }

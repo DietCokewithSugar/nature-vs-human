@@ -18,28 +18,12 @@
         "url": "https://polyfork.dev/asset/common-wasp-base"
       },
       {
-        "title": "Stag beetle",
-        "url": "https://polyfork.dev/asset/stag-beetle-base"
+        "title": "Rat",
+        "url": "https://polyfork.dev/asset/rat-base"
       },
       {
-        "title": "Praying mantis",
-        "url": "https://polyfork.dev/asset/praying-mantis-base"
-      },
-      {
-        "title": "Ant queen",
-        "url": "https://polyfork.dev/asset/ant-queen-base"
-      },
-      {
-        "title": "Shore crab",
-        "url": "https://polyfork.dev/asset/shore-crab-base"
-      },
-      {
-        "title": "Jellyfish",
-        "url": "https://polyfork.dev/asset/jellyfish-base"
-      },
-      {
-        "title": "Moray eel",
-        "url": "https://polyfork.dev/asset/moray-eel-base"
+        "title": "Pigeon",
+        "url": "https://polyfork.dev/asset/pigeon-base"
       },
       {
         "title": "Octopus",
@@ -50,108 +34,8 @@
         "url": "https://polyfork.dev/asset/reef-shark-base"
       },
       {
-        "title": "Rat",
-        "url": "https://polyfork.dev/asset/rat-base"
-      },
-      {
-        "title": "Pigeon",
-        "url": "https://polyfork.dev/asset/pigeon-base"
-      },
-      {
-        "title": "Fox",
-        "url": "https://polyfork.dev/asset/fox-base"
-      },
-      {
-        "title": "Bear",
-        "url": "https://polyfork.dev/asset/bear-base"
-      },
-      {
         "title": "Elephant",
         "url": "https://polyfork.dev/asset/elephant-base"
-      },
-      {
-        "title": "Velociraptor",
-        "url": "https://polyfork.dev/asset/velociraptor-base"
-      },
-      {
-        "title": "Pteranodon",
-        "url": "https://polyfork.dev/asset/pteranodon-base"
-      },
-      {
-        "title": "Triceratops",
-        "url": "https://polyfork.dev/asset/triceratops-base"
-      },
-      {
-        "title": "Brachiosaurus",
-        "url": "https://polyfork.dev/asset/brachiosaurus-base"
-      },
-      {
-        "title": "Tyrannosaurus",
-        "url": "https://polyfork.dev/asset/tyrannosaurus-base"
-      },
-      {
-        "title": "Porch Log Cabin",
-        "url": "https://polyfork.dev/asset/porch-log-cabin-d2f3ef"
-      },
-      {
-        "title": "A-Frame Cabin",
-        "url": "https://polyfork.dev/asset/a-frame-cabin-6cb550"
-      },
-      {
-        "title": "Crossing Keeper's Cottage",
-        "url": "https://polyfork.dev/asset/crossing-keeper-s-cottage-de49a4"
-      },
-      {
-        "title": "Alpine Chalet",
-        "url": "https://polyfork.dev/asset/alpine-chalet-47d59e"
-      },
-      {
-        "title": "Clubhouse",
-        "url": "https://polyfork.dev/asset/clubhouse-8570d2"
-      },
-      {
-        "title": "Brownstone Row House",
-        "url": "https://polyfork.dev/asset/brownstone-row-house-1b84fd"
-      },
-      {
-        "title": "Corner Shop",
-        "url": "https://polyfork.dev/asset/corner-shop-5aec8c"
-      },
-      {
-        "title": "Boat Shed",
-        "url": "https://polyfork.dev/asset/boat-shed-74c94f"
-      },
-      {
-        "title": "Lifeguard Tower",
-        "url": "https://polyfork.dev/asset/lifeguard-tower-183c37"
-      },
-      {
-        "title": "Old Lighthouse",
-        "url": "https://polyfork.dev/asset/old-lighthouse-48ca6c"
-      },
-      {
-        "title": "Beach Cafe Kiosk",
-        "url": "https://polyfork.dev/asset/beach-cafe-kiosk-9e8f6d"
-      },
-      {
-        "title": "Yard Crane",
-        "url": "https://polyfork.dev/asset/yard-crane-316e4a"
-      },
-      {
-        "title": "Small Fishing Boat",
-        "url": "https://polyfork.dev/asset/small-fishing-boat-4ac0e3"
-      },
-      {
-        "title": "Dock Cargo Barge",
-        "url": "https://polyfork.dev/asset/dock-cargo-barge-69dc4b"
-      },
-      {
-        "title": "Sailboat",
-        "url": "https://polyfork.dev/asset/sailboat-3ee283"
-      },
-      {
-        "title": "Cargo Container",
-        "url": "https://polyfork.dev/asset/cargo-container-fd73bc"
       },
       {
         "title": "Brick Tenement",
@@ -162,28 +46,32 @@
         "url": "https://polyfork.dev/asset/corner-tenement-92fb62"
       },
       {
-        "title": "Department Store",
-        "url": "https://polyfork.dev/asset/department-store-ffbd58"
-      },
-      {
-        "title": "Parking Garage",
-        "url": "https://polyfork.dev/asset/parking-garage-6e4f2c"
-      },
-      {
-        "title": "Prewar Apartment House",
-        "url": "https://polyfork.dev/asset/prewar-apartment-house-1081a6"
-      },
-      {
         "title": "Cast Iron Loft",
         "url": "https://polyfork.dev/asset/cast-iron-loft-b04b5a"
       },
       {
-        "title": "Fire Station",
-        "url": "https://polyfork.dev/asset/fire-station-e2b756"
+        "title": "Boat Shed",
+        "url": "https://polyfork.dev/asset/boat-shed-74c94f"
       },
       {
-        "title": "Street Diner",
-        "url": "https://polyfork.dev/asset/street-diner-40fc87"
+        "title": "Old Lighthouse",
+        "url": "https://polyfork.dev/asset/old-lighthouse-48ca6c"
+      },
+      {
+        "title": "Yard Crane",
+        "url": "https://polyfork.dev/asset/yard-crane-316e4a"
+      },
+      {
+        "title": "Dock Cargo Barge",
+        "url": "https://polyfork.dev/asset/dock-cargo-barge-69dc4b"
+      },
+      {
+        "title": "Cargo Container",
+        "url": "https://polyfork.dev/asset/cargo-container-fd73bc"
+      },
+      {
+        "title": "Small Fishing Boat",
+        "url": "https://polyfork.dev/asset/small-fishing-boat-4ac0e3"
       },
       {
         "title": "Office Tower",
@@ -204,6 +92,14 @@
       {
         "title": "Hotel",
         "url": "https://polyfork.dev/asset/hotel-b43f66"
+      },
+      {
+        "title": "Department Store",
+        "url": "https://polyfork.dev/asset/department-store-ffbd58"
+      },
+      {
+        "title": "Parking Garage",
+        "url": "https://polyfork.dev/asset/parking-garage-6e4f2c"
       },
       {
         "title": "Narrow-Body Airliner",
@@ -244,6 +140,166 @@
       {
         "title": "Wheeled City Coupe",
         "url": "https://polyfork.dev/asset/wheeled-city-coupe-5c381e"
+      },
+      {
+        "title": "Wolf",
+        "url": "https://polyfork.dev/asset/wolf-base"
+      },
+      {
+        "title": "Cat",
+        "url": "https://polyfork.dev/asset/cat-base"
+      },
+      {
+        "title": "Bear",
+        "url": "https://polyfork.dev/asset/bear-base"
+      },
+      {
+        "title": "Pig",
+        "url": "https://polyfork.dev/asset/pig-base"
+      },
+      {
+        "title": "Crocodile",
+        "url": "https://polyfork.dev/asset/crocodile-base"
+      },
+      {
+        "title": "Ox",
+        "url": "https://polyfork.dev/asset/ox-base"
+      },
+      {
+        "title": "Crow",
+        "url": "https://polyfork.dev/asset/crow-base"
+      },
+      {
+        "title": "Dog",
+        "url": "https://polyfork.dev/asset/dog-base"
+      },
+      {
+        "title": "Farmer (straw cloak)",
+        "url": "https://polyfork.dev/asset/farmer-363820"
+      },
+      {
+        "title": "Ashigaru Foot Soldier",
+        "url": "https://polyfork.dev/asset/ashigaru-foot-soldier-806707"
+      },
+      {
+        "title": "Sheriff",
+        "url": "https://polyfork.dev/asset/sheriff-986181"
+      },
+      {
+        "title": "Park Ranger",
+        "url": "https://polyfork.dev/asset/park-ranger-c1697e"
+      },
+      {
+        "title": "Senior Scientist",
+        "url": "https://polyfork.dev/asset/senior-scientist-631736"
+      },
+      {
+        "title": "Spear",
+        "url": "https://polyfork.dev/asset/spear-e9824e"
+      },
+      {
+        "title": "Lean-To Shelter",
+        "url": "https://polyfork.dev/asset/lean-to-shelter-f0709f"
+      },
+      {
+        "title": "Timber Dugout Shelter",
+        "url": "https://polyfork.dev/asset/timber-dugout-shelter-bbb56d"
+      },
+      {
+        "title": "Laced Hide Stretching Rack",
+        "url": "https://polyfork.dev/asset/laced-hide-stretching-rack-8152a1"
+      },
+      {
+        "title": "Ventilated Hide Food Larder",
+        "url": "https://polyfork.dev/asset/ventilated-hide-food-larder-f53174"
+      },
+      {
+        "title": "Bone Warning Totem",
+        "url": "https://polyfork.dev/asset/bone-warning-totem-56cf4a"
+      },
+      {
+        "title": "Stone Ring Campfire",
+        "url": "https://polyfork.dev/asset/stone-ring-campfire-8a0c6f"
+      },
+      {
+        "title": "Snow-Laden Spruce",
+        "url": "https://polyfork.dev/asset/snow-laden-spruce-36716e"
+      },
+      {
+        "title": "Boulder Field Cluster",
+        "url": "https://polyfork.dev/asset/boulder-field-cluster-08e364"
+      },
+      {
+        "title": "Petroglyph Boulder",
+        "url": "https://polyfork.dev/asset/petroglyph-boulder-7203c3"
+      },
+      {
+        "title": "Hide Fleshing Workstation",
+        "url": "https://polyfork.dev/asset/hide-fleshing-workstation-36c93e"
+      },
+      {
+        "title": "Castle Gatehouse",
+        "url": "https://polyfork.dev/asset/castle-gatehouse-4ed5c6"
+      },
+      {
+        "title": "Buddhist Temple Hall",
+        "url": "https://polyfork.dev/asset/buddhist-temple-hall-f0aa09"
+      },
+      {
+        "title": "Tiered Pagoda",
+        "url": "https://polyfork.dev/asset/tiered-pagoda-f4ade0"
+      },
+      {
+        "title": "Machiya Townhouse",
+        "url": "https://polyfork.dev/asset/machiya-townhouse-8ef64e"
+      },
+      {
+        "title": "Kura Storehouse",
+        "url": "https://polyfork.dev/asset/kura-storehouse-5c9631"
+      },
+      {
+        "title": "Minka Farmhouse",
+        "url": "https://polyfork.dev/asset/minka-farmhouse-680475"
+      },
+      {
+        "title": "Market Stall",
+        "url": "https://polyfork.dev/asset/market-stall-94937d"
+      },
+      {
+        "title": "Stone Well",
+        "url": "https://polyfork.dev/asset/stone-well-b2dfcd"
+      },
+      {
+        "title": "Temple Bell Tower",
+        "url": "https://polyfork.dev/asset/temple-bell-tower-745387"
+      },
+      {
+        "title": "Japanese Maple",
+        "url": "https://polyfork.dev/asset/japanese-maple-d2fb29"
+      },
+      {
+        "title": "Cherry Blossom Tree",
+        "url": "https://polyfork.dev/asset/cherry-blossom-tree-3f7ab7"
+      },
+      {
+        "title": "Flat River Boat",
+        "url": "https://polyfork.dev/asset/flat-river-boat-6bac37"
+      },
+      {
+        "title": "Riveted Boiler Hall",
+        "url": "https://polyfork.dev/asset/riveted-boiler-hall-da0c09"
+      },
+      {
+        "title": "Brick Depot Warehouse",
+        "url": "https://polyfork.dev/asset/brick-depot-warehouse-3dd642"
+      },
+      {
+        "title": "Water Tower",
+        "url": "https://polyfork.dev/asset/water-tower-7eb7ec"
+      },
+      {
+        "title": "Grain Silo",
+        "url": "https://polyfork.dev/asset/grain-silo-58ca67"
       }
     ]
   }

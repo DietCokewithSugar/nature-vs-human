@@ -1,19 +1,28 @@
-import { Box3, Group, Mesh, Vector3, type AnimationClip, type Object3D, type SkinnedMesh } from 'three';
+import { Box3, Group, Vector3, type AnimationClip, type Mesh, type Object3D, type SkinnedMesh } from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { VARIANTS, applyVariant } from './kitbash.ts';
+import { PROCEDURAL } from './procedural.ts';
 
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
 
-const cache = new Map<string, Promise<GLTF>>();
+const files = new Map<string, Promise<GLTF>>();
+const templates = new Map<string, Promise<Template>>();
+
+interface Template {
+  scene: Object3D;
+  clips: AnimationClip[];
+  skinned: boolean;
+}
 
 export function modelUrl(name: string): string {
   return `${import.meta.env.BASE_URL}models/${name}.glb`;
 }
 
 export function loadModel(name: string): Promise<GLTF> {
-  let p = cache.get(name);
+  let p = files.get(name);
   if (!p) {
     p = loader.loadAsync(modelUrl(name)).then((gltf) => {
       gltf.scene.traverse((o) => {
@@ -26,38 +35,65 @@ export function loadModel(name: string): Promise<GLTF> {
       });
       return gltf;
     });
-    p.catch(() => cache.delete(name));
-    cache.set(name, p);
+    p.catch(() => files.delete(name));
+    files.set(name, p);
   }
   return p;
+}
+
+/** A plain model, or a kitbashed variant built once and cloned per instance. */
+function template(key: string): Promise<Template> {
+  let t = templates.get(key);
+  if (!t && PROCEDURAL[key]) {
+    t = Promise.resolve({ scene: PROCEDURAL[key]!(), clips: [], skinned: false });
+    templates.set(key, t);
+  }
+  if (!t) {
+    const spec = VARIANTS[key];
+    t = loadModel(spec ? spec.base : key).then((gltf) => {
+      let skinned = false;
+      gltf.scene.traverse((o) => {
+        if ((o as SkinnedMesh).isSkinnedMesh) skinned = true;
+      });
+      if (!spec) return { scene: gltf.scene, clips: gltf.animations, skinned };
+      const scene = cloneSkinned(gltf.scene);
+      applyVariant(scene, spec);
+      return { scene, clips: gltf.animations, skinned };
+    });
+    t.catch(() => templates.delete(key));
+    templates.set(key, t);
+  }
+  return t;
 }
 
 export interface Prepared {
   /** A fresh, independent copy with feet on y = 0 and the longest horizontal side = `size`. */
   object: Group;
+  /** The cloned model inside the normalising wrappers (bones live here). */
+  model: Object3D;
   clips: AnimationClip[];
   height: number;
 }
 
-/**
- * Clone a model and normalise it: centre on x/z, rest on the ground, scale to `size`.
- * `by` chooses which dimension `size` refers to.
- */
-export async function instantiate(name: string, size: number, by: 'length' | 'height' = 'length'): Promise<Prepared> {
-  const gltf = await loadModel(name);
-  const src = gltf.animations.length ? cloneSkinned(gltf.scene) : gltf.scene.clone(true);
+/** Clone a model and normalise it: centre on x/z, rest on the ground, scale to `size`. */
+export async function instantiate(key: string, size: number, by: 'length' | 'height' = 'length'): Promise<Prepared> {
+  const t = await template(key);
+  const src = t.skinned ? cloneSkinned(t.scene) : t.scene.clone(true);
+  src.updateMatrixWorld(true);
   const box = new Box3().setFromObject(src);
   const dims = box.getSize(new Vector3());
   const ref = by === 'height' ? dims.y : Math.max(dims.x, dims.z);
   const scale = ref > 0 ? size / ref : 1;
   const center = box.getCenter(new Vector3());
-  src.position.set(-center.x, -box.min.y, -center.z);
+  const offset = new Group();
+  offset.position.set(-center.x, -box.min.y, -center.z);
+  offset.add(src);
   const inner = new Group();
-  inner.add(src);
+  inner.add(offset);
   inner.scale.setScalar(scale);
   const outer = new Group();
   outer.add(inner);
-  return { object: outer, clips: gltf.animations, height: dims.y * scale };
+  return { object: outer, model: src, clips: t.clips, height: dims.y * scale };
 }
 
 export function findClip(clips: AnimationClip[], ...names: string[]): AnimationClip | undefined {
@@ -66,8 +102,4 @@ export function findClip(clips: AnimationClip[], ...names: string[]): AnimationC
     if (c) return c;
   }
   return clips[0];
-}
-
-export function disposeObject(o: Object3D): void {
-  o.removeFromParent();
 }
