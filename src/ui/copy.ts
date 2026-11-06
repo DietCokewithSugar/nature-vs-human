@@ -12,14 +12,12 @@ export const COPY = {
   buyAmounts: { 1: '×1', 10: '×10', 100: '×100', max: '最大' } as Record<string, string>,
 
   creatures: {
-    owned: '只',
     nextEra: '下一站',
     finalBill: '最后一张账单',
   },
 
   upgrades: {
     empty: '暂时没货。人类也在想办法。',
-    owned: '已买',
   },
 
   breeding: {
@@ -52,12 +50,10 @@ export const COPY = {
     title: '催收排行榜',
     lifetime: '总榜',
     speedrun: '速通榜',
-    me: '我',
     nickname: '昵称',
     save: '保存',
     offline: '排行榜暂时联系不上。成绩先记在小本本上。',
     empty: '还没有人上榜。第一名虚位以待。',
-    noDino: '还没见过恐龙',
     loading: '正在点名…',
   },
 
@@ -91,9 +87,7 @@ export const COPY = {
     } as Record<number, { title: string; body: string }>,
     evolved: (n: string) => `进化完成 · +${n} 基因`,
     exported: '存档码已复制',
-    imported: '存档已载入',
     importFailed: '这串存档码看不懂',
-    resetDone: '存档已清空。人类松了一口气。',
     nicknameSaved: '昵称已更新',
     rebuilt: '人类连夜重建了城市。催收继续。',
   },

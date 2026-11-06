@@ -282,10 +282,8 @@ function SettingsModal() {
               class="btn solid"
               disabled={!text.trim()}
               onClick={() => {
-                if (app.importSave(text)) {
-                  pushToast({ title: COPY.toast.imported });
-                  modal.value = null;
-                } else pushToast({ title: COPY.toast.importFailed });
+                // A good save reloads the page; only a failure needs a message.
+                if (!app.importSave(text)) pushToast({ title: COPY.toast.importFailed });
               }}
             >
               {COPY.settings.importConfirm}
@@ -311,11 +309,7 @@ function SettingsModal() {
               <button
                 type="button"
                 class="btn danger"
-                onClick={() => {
-                  app.resetSave();
-                  modal.value = null;
-                  pushToast({ title: COPY.toast.resetDone });
-                }}
+                onClick={() => app.resetSave()}
               >
                 {COPY.settings.resetYes}
               </button>
