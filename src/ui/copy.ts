@@ -48,6 +48,27 @@ export const COPY = {
 
   breeding: { name: '繁殖巢', bred: '繁殖' },
 
+  lairs: {
+    home: '老窝',
+    where: (lair: string, zone: string) => `${lair} · ${zone}`,
+    wrecked: (s: string) => `老窝被端 · ${s} 后长回来`,
+    wreckedShort: '被端',
+    show: '去看看',
+  },
+
+  raid: {
+    marker: (lair: string) => `端${lair}`,
+    hint: '点我赶走',
+  },
+
+  disaster: {
+    warning: (name: string, s: number) => `${name}预警 · ${s} 秒`,
+    active: (name: string, s: number) => `${name} · 还剩 ${s} 秒`,
+    boost: (cls: string, x: number) => `${cls} ×${x}`,
+  },
+
+  map: { recenter: '回到全景' },
+
   tide: { name: '潮汐' },
 
   meta: {
@@ -126,6 +147,13 @@ export const COPY = {
     countermeasure: (name: string, cls: string) => ({ title: name, body: `人类针对你的${cls}出手了` }),
     defected: (from: string, to: string) => ({ title: `${from}跳反了`, body: `它们现在是人类的${to}` }),
     taming: (name: string) => `${name}快被驯化了`,
+    raid: (lair: string) => ({ title: `人类来端${lair}了`, body: '点红牌子把他们赶走' }),
+    raidLanded: (lair: string, name: string, pct: number) => ({ title: `${lair}被端了`, body: `${name}产出 −${pct}%，过一阵自己长回来` }),
+    repelled: '赶跑了',
+    disaster: (name: string, boost: string, research: number) => ({
+      title: name,
+      body: research > 0 ? `${boost}；人类研究倒退 ${research}%` : `${boost}；人类这次没受什么损失`,
+    }),
     exported: '存档码已复制',
     importFailed: '这串存档码看不懂',
     nicknameSaved: '昵称已更新',

@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { Counter, EraTokens, Menu, NewsBubble, RunBar, SkillDock, TapHint } from './hud.tsx';
+import { Counter, DisasterBanner, MapButton, Menu, NewsBubble, RaidMarker, RunBar, SkillDock, TapHint } from './hud.tsx';
 import { Flash, Floats, Modals, Toasts } from './overlays.tsx';
 import { Panel } from './panel.tsx';
 import { sheet, viewInsets, type Insets, type Sheet } from './store.ts';
@@ -141,12 +141,14 @@ export function App({ onInsets }: AppProps) {
           <RunBar />
           <Menu />
         </header>
-        <EraTokens />
+        <MapButton />
+        <DisasterBanner />
         <SkillDock />
         <Panel onGrab={onGrab} justDragged={() => performance.now() - dragEnd.current < 250} />
         <NewsBubble />
         <TapHint />
       </div>
+      <RaidMarker />
       <Floats />
       <Toasts />
       <Flash />

@@ -5,6 +5,8 @@ import {
   CLASSES,
   CREATURE_BY_ID,
   CREATURES,
+  DISASTERS,
+  LAIRS,
   TAMEABLE,
   bredPerSec,
   countermeasureName,
@@ -16,8 +18,8 @@ import {
   type EraId,
 } from '../core/index.ts';
 import { Money, Num, SCIENTIST, Thumb } from './common.tsx';
-import { COPY, NEWS, eraName } from './copy.ts';
-import { app, focusEra, frame, modal, viewInsets } from './store.ts';
+import { COPY, NEWS } from './copy.ts';
+import { app, frame, modal, viewInsets } from './store.ts';
 
 export function Counter() {
   frame.value;
@@ -38,7 +40,7 @@ export function Counter() {
   );
 }
 
-/** A landmark from each era's island. */
+/** A landmark from each era, used for the "back to the whole map" button. */
 const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
   1: { model: 'campfire' },
   2: { model: 'temple' },
@@ -46,28 +48,84 @@ const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
   4: { model: 'office-tower', crop: 0.55 },
 };
 
-export function EraTokens() {
+/** Shown once the player has panned or zoomed away: one tap frames the whole map again. */
+export function MapButton() {
   frame.value;
+  if (!app.cameraMoved()) return null;
   const era = app.game.run.era;
-  if (era < 2) return null;
-  const eras = ([1, 2, 3, 4] as EraId[]).filter((e) => e <= era);
   return (
-    <nav class="eras" aria-label="时代">
-      {eras.map((e) => (
-        <button
-          type="button"
-          key={e}
-          class="era"
-          data-era={e}
-          aria-pressed={focusEra.value === e}
-          aria-label={eraName(e)}
-          title={eraName(e)}
-          onClick={() => app.flyTo(e)}
-        >
-          <Thumb {...ERA_MODEL[e]} />
-        </button>
-      ))}
+    <nav class="eras" aria-label={COPY.map.recenter}>
+      <button type="button" class="era" data-era={era} aria-label={COPY.map.recenter} title={COPY.map.recenter} onClick={() => app.recenter()}>
+        <Thumb {...ERA_MODEL[era]} />
+      </button>
     </nav>
+  );
+}
+
+/** A disaster on its way or raging: what it is, how long, who profits. */
+export function DisasterBanner() {
+  frame.value;
+  const d = app.game.run.disaster;
+  if (!d) return null;
+  const def = DISASTERS[d.id];
+  const s = Math.ceil(d.left);
+  return (
+    <div class="alert" data-phase={d.phase} data-disaster={d.id} role="status">
+      <b>{d.phase === 'warning' ? COPY.disaster.warning(def.name, s) : COPY.disaster.active(def.name, s)}</b>
+      <span>{COPY.disaster.boost(CLASSES[def.boost.cls].name, def.boost.x)}</span>
+    </div>
+  );
+}
+
+/**
+ * A big tap target over the raid party, positioned every frame without re-rendering.
+ * When the party is off screen it sticks to the nearest edge and points the way.
+ */
+export function RaidMarker() {
+  frame.value;
+  const ref = useRef<HTMLButtonElement>(null);
+  const raid = app.game.run.raid;
+  useEffect(() => {
+    if (!raid) return;
+    let id = 0;
+    const tick = () => {
+      const el = ref.current;
+      const p = app.raidScreen();
+      if (el) {
+        if (!p) {
+          el.style.opacity = '0';
+        } else {
+          const ins = viewInsets.value;
+          const pad = 44;
+          const x = Math.min(window.innerWidth - ins.right - pad, Math.max(ins.left + pad, p.x));
+          const y = Math.min(window.innerHeight - ins.bottom - pad, Math.max(ins.top + pad, p.y));
+          el.style.opacity = '1';
+          el.style.transform = `translate(${x}px, ${y}px)`;
+          el.dataset.edge = p.onScreen ? '' : 'true';
+          const arrow = el.querySelector<HTMLElement>('.raid-arrow');
+          if (arrow) arrow.style.transform = `rotate(${Math.atan2(p.y - y, p.x - x)}rad)`;
+        }
+      }
+      id = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => cancelAnimationFrame(id);
+  }, [raid?.target]);
+  if (!raid) return null;
+  const lair = LAIRS[raid.target].name;
+  const left = Math.ceil(raid.left);
+  return (
+    <button type="button" class="raid-marker" ref={ref} style={{ opacity: 0 }} aria-label={`${COPY.raid.marker(lair)} · ${COPY.raid.hint}`} onClick={() => app.repel()}>
+      <span class="raid-arrow" aria-hidden="true" />
+      <span class="raid-face">
+        <Thumb model={CREATURE_BY_ID[raid.target].model} fill={0.8} />
+        <b class="num">{left}</b>
+      </span>
+      <span class="raid-label">
+        {COPY.raid.marker(lair)}
+        <small>{COPY.raid.hint}</small>
+      </span>
+    </button>
   );
 }
 

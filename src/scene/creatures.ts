@@ -2,7 +2,6 @@ import { AnimationMixer, Group, MathUtils, Vector3, type AnimationAction } from 
 import type { CreatureId, DomesticId } from '../core/index.ts';
 import { findClip, instantiate } from './assets.ts';
 import { HumanRig } from './humanRig.ts';
-import { inRect, type Rect } from './layout.ts';
 
 export type Mode = 'walk' | 'fly' | 'swim' | 'float';
 
@@ -60,11 +59,17 @@ export const VIEWS: Record<ViewId, WalkerView> = {
   scientist: { model: 'scientist', size: 3.1, mode: 'walk', speed: 1.6, cap: 2, human: true },
 };
 
-export interface Zone {
-  area: Rect;
-  blocked: Rect[];
-  waterLevel: () => number;
+/** What a walker needs from the world: ground, water and routes. */
+export interface WalkerHost {
+  groundAt(x: number, z: number): number;
+  waterLevel(): number;
+  /** A point near `home` reachable in a straight line from `from`. */
+  wanderPoint(from: Vector3, home: Vector3, radius: number, mode: NavMode): Vector3;
+  /** Waypoints from one point to another, or null if there is no way. */
+  route(from: Vector3, to: Vector3, mode: NavMode): Vector3[] | null;
 }
+
+export type NavMode = 'land' | 'water' | 'air';
 
 type State = 'move' | 'attack' | 'rest' | 'leave' | 'chase';
 
@@ -74,12 +79,15 @@ export interface AttackTarget {
   onHit: (at: Vector3) => void;
 }
 
-/** One animated creature or person on a board. */
+/** One animated creature or person on the map. Lives near a home and makes trips from it. */
 export class Walker {
   readonly root = new Group();
   readonly id: ViewId;
   readonly view: WalkerView;
-  private readonly zone: Zone;
+  readonly nav: NavMode;
+  private readonly host: WalkerHost;
+  home: Vector3;
+  roam: number;
   private mixer: AnimationMixer | null = null;
   private rig: HumanRig | null = null;
   private moveAction: AnimationAction | null = null;
@@ -87,23 +95,31 @@ export class Walker {
   private state: State = 'rest';
   private timer = 0;
   private hitTimer = 0;
-  private target = new Vector3();
+  private path: Vector3[] = [];
   private attack: AttackTarget | null = null;
+  private arrive: (() => void) | null = null;
   private chaseTarget: (() => Vector3 | null) | null = null;
   private yaw = Math.random() * Math.PI * 2;
   private bob = Math.random() * 10;
   private height = 1;
   private appear = 0;
   private moving = 0;
+  /** Speed multiplier for trips (raid parties hurry, fleeing people run). */
+  pace = 1;
   ready = false;
   removed = false;
 
-  constructor(id: ViewId, view: WalkerView, zone: Zone, at?: Vector3) {
+  constructor(id: ViewId, view: WalkerView, host: WalkerHost, home: Vector3, roam: number, at?: Vector3) {
     this.id = id;
     this.view = view;
-    this.zone = zone;
+    this.host = host;
+    this.home = home.clone();
+    this.roam = roam;
+    this.nav = view.mode === 'fly' ? 'air' : view.zone === 'water' ? 'water' : 'land';
     this.root.visible = false;
-    this.place(at ?? this.randomPoint(), true);
+    const p = at ?? this.home;
+    this.root.position.set(p.x, 0, p.z);
+    this.root.position.y = this.baseY();
     void this.load();
   }
 
@@ -126,7 +142,7 @@ export class Walker {
     this.root.scale.setScalar(0.001);
     this.root.visible = true;
     this.ready = true;
-    this.setState('move');
+    if (!this.path.length && !this.arrive) this.wander();
   }
 
   get leaving(): boolean {
@@ -134,67 +150,92 @@ export class Walker {
   }
 
   get busy(): boolean {
-    return this.state === 'attack' || this.attack !== null || this.state === 'leave' || this.chaseTarget !== null;
+    return this.attack !== null || this.arrive !== null || this.state === 'leave' || this.chaseTarget !== null;
   }
 
   get position(): Vector3 {
     return this.root.position;
   }
 
-  private randomPoint(): Vector3 {
-    const { area, blocked } = this.zone;
-    for (let i = 0; i < 24; i++) {
-      const x = MathUtils.lerp(area.x0, area.x1, Math.random());
-      const z = MathUtils.lerp(area.z0, area.z1, Math.random());
-      if (!blocked.some((r) => inRect(r, x, z))) return new Vector3(x, 0, z);
-    }
-    return new Vector3((area.x0 + area.x1) / 2, 0, (area.z0 + area.z1) / 2);
+  get modelHeight(): number {
+    return this.height;
   }
 
   private baseY(): number {
     const v = this.view;
-    if (v.mode === 'fly') return MathUtils.lerp(v.alt![0], v.alt![1], (Math.sin(this.bob * 0.3) + 1) / 2);
-    if (v.mode === 'swim') return this.zone.waterLevel() - this.height * 0.55;
-    if (v.mode === 'float') return this.zone.waterLevel() - this.height * 0.75;
-    return 0;
+    const p = this.root.position;
+    const ground = this.host.groundAt(p.x, p.z);
+    if (v.mode === 'fly') return ground + MathUtils.lerp(v.alt![0], v.alt![1], (Math.sin(this.bob * 0.3) + 1) / 2);
+    if (v.mode === 'swim') return Math.max(ground + 0.2, this.host.waterLevel() - this.height * 0.55);
+    if (v.mode === 'float') return this.host.waterLevel() - this.height * 0.75;
+    return Math.max(ground, this.nav === 'land' ? ground : -Infinity);
   }
 
-  private place(p: Vector3, snap: boolean): void {
-    this.root.position.set(p.x, snap ? this.baseY() : this.root.position.y, p.z);
-  }
-
-  private setState(s: State): void {
-    this.state = s;
-    const fade = 0.25;
-    if (s === 'move' || s === 'chase') {
-      if (s === 'move') this.target.copy(this.randomPoint());
-      if (this.moveAction && !this.moveAction.isRunning()) {
-        this.moveAction.reset().fadeIn(fade).play();
-        this.restAction?.fadeOut(fade);
-      }
-    } else if (s !== 'leave') {
-      this.timer = s === 'attack' ? 2.4 + Math.random() * 1.5 : 1 + Math.random() * 3;
-      this.hitTimer = 0.2;
-      if (this.restAction && !this.restAction.isRunning()) {
-        this.restAction.reset().fadeIn(fade).play();
-        this.moveAction?.fadeOut(fade);
-      }
+  private playMove(): void {
+    if (this.moveAction && !this.moveAction.isRunning()) {
+      this.moveAction.reset().fadeIn(0.25).play();
+      this.restAction?.fadeOut(0.25);
     }
   }
 
-  goAttack(t: AttackTarget): void {
-    if (!this.ready || this.busy) return;
+  private playRest(): void {
+    if (this.restAction && !this.restAction.isRunning()) {
+      this.restAction.reset().fadeIn(0.25).play();
+      this.moveAction?.fadeOut(0.25);
+    }
+  }
+
+  /** Follow a route to a point. Straight line for flyers. */
+  private travel(to: Vector3): boolean {
+    const route = this.nav === 'air' ? [to.clone()] : this.host.route(this.root.position, to, this.nav);
+    if (!route || !route.length) return false;
+    this.path = route;
+    this.state = 'move';
+    this.playMove();
+    return true;
+  }
+
+  private wander(): void {
+    const p = this.host.wanderPoint(this.root.position, this.home, this.roam, this.nav);
+    this.path = [p];
+    this.state = 'move';
+    this.playMove();
+  }
+
+  private rest(): void {
+    this.state = 'rest';
+    this.timer = 1 + Math.random() * 3;
+    this.playRest();
+  }
+
+  goAttack(t: AttackTarget): boolean {
+    if (!this.ready || this.busy) return false;
+    if (!this.travel(t.point)) return false;
     this.attack = t;
-    this.target.set(t.point.x, 0, t.point.z);
-    this.setState('move');
+    return true;
+  }
+
+  /** Walk somewhere and call back on arrival (raid parties, people fleeing). */
+  goTo(point: Vector3, onArrive: () => void): boolean {
+    if (!this.ready || this.leaving) return false;
+    this.attack = null;
+    this.chaseTarget = null;
+    if (!this.travel(point)) return false;
+    this.arrive = onArrive;
+    return true;
   }
 
   /** Follow a moving target (hunters after prey, dogs after hunters). null stops. */
   chase(target: (() => Vector3 | null) | null): void {
-    if (!this.ready || this.leaving) return;
+    if (!this.ready || this.leaving || this.arrive) return;
     this.chaseTarget = target;
     this.attack = null;
-    this.setState(target ? 'chase' : 'move');
+    if (target) {
+      this.state = 'chase';
+      this.playMove();
+    } else {
+      this.wander();
+    }
   }
 
   dismiss(): void {
@@ -239,7 +280,7 @@ export class Walker {
     }
 
     const pos = this.root.position;
-    const y = this.baseY();
+    const speed = this.view.speed * this.pace;
     if (this.state === 'chase' && this.chaseTarget) {
       const t = this.chaseTarget();
       if (!t) {
@@ -248,20 +289,26 @@ export class Walker {
         const dx = t.x - pos.x;
         const dz = t.z - pos.z;
         const dist = Math.hypot(dx, dz);
-        if (dist > 2.2) this.steer(dx, dz, dist - 2, dt, this.view.speed);
+        if (dist > 2.2) this.steer(dx, dz, dist - 2, dt, speed);
         else this.yaw = Math.atan2(dx, dz);
       }
-      pos.y = MathUtils.damp(pos.y, y, 3, dt);
+      pos.y = MathUtils.damp(pos.y, this.baseY(), 6, dt);
     } else if (this.state === 'move') {
-      const dx = this.target.x - pos.x;
-      const dz = this.target.z - pos.z;
-      const dist = Math.hypot(dx, dz);
-      if (dist < (this.attack ? 0.4 : 0.6)) this.setState(this.attack ? 'attack' : 'rest');
-      else this.steer(dx, dz, dist, dt, this.view.speed);
-      pos.y = MathUtils.damp(pos.y, y, 3, dt);
+      const next = this.path[0];
+      if (!next) {
+        this.arrived();
+      } else {
+        const dx = next.x - pos.x;
+        const dz = next.z - pos.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.5) this.path.shift();
+        else this.steer(dx, dz, dist, dt, speed);
+      }
+      pos.y = MathUtils.damp(pos.y, this.baseY(), 8, dt);
     } else if (this.state === 'attack' && this.attack) {
       this.timer -= dt;
       this.hitTimer -= dt;
+      const y = this.baseY();
       const hop = Math.abs(Math.sin(this.bob * 9)) * Math.min(1.2, this.view.size * 0.12);
       const ay = this.view.mode === 'fly' ? Math.max(this.attack.top + 1, y * 0.5) : y;
       pos.y = MathUtils.damp(pos.y, ay, 6, dt) + (this.view.mode === 'walk' ? hop * 0.15 : 0);
@@ -271,17 +318,36 @@ export class Walker {
       }
       if (this.timer <= 0) {
         this.attack = null;
-        this.setState('move');
+        // Head back towards the lair.
+        if (!this.travel(this.host.wanderPoint(pos, this.home, this.roam, this.nav))) this.wander();
       }
     } else {
       this.timer -= dt;
-      pos.y = MathUtils.damp(pos.y, y, 3, dt);
-      if (this.timer <= 0) this.setState('move');
+      pos.y = MathUtils.damp(pos.y, this.baseY(), 6, dt);
+      if (this.timer <= 0) this.wander();
     }
     if (this.view.mode === 'float') pos.y += Math.sin(this.bob * 1.6) * 0.01;
     this.root.rotation.y = this.yaw;
     this.mixer?.update(dt);
     this.rig?.update(dt, this.moving);
+  }
+
+  private arrived(): void {
+    if (this.attack) {
+      this.state = 'attack';
+      this.timer = 2.4 + Math.random() * 1.5;
+      this.hitTimer = 0.2;
+      this.playRest();
+      return;
+    }
+    if (this.arrive) {
+      const cb = this.arrive;
+      this.arrive = null;
+      this.rest();
+      cb();
+      return;
+    }
+    this.rest();
   }
 }
 

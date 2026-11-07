@@ -1,4 +1,4 @@
-import { amber, bronze, brown, cyan, grass, gray, iris, olive, sand, sky, slate, tomato } from '@radix-ui/colors';
+import { amber, bronze, brown, cyan, gold, grass, gray, iris, jade, lime, olive, orange, sand, sky, slate, tomato } from '@radix-ui/colors';
 import type { GroundColor } from './layout.ts';
 
 /**
@@ -22,6 +22,10 @@ export const PALETTE = {
   hit: tomato.tomato9,
   trail: olive.olive12,
   heart: tomato.tomato9,
+  sprout: grass.grass9,
+  sproutLight: lime.lime9,
+  raid: tomato.tomato9,
+  lava: orange.orange9,
 
   /** Lab beacon colours as research rises. */
   beacon: [grass.grass9, amber.amber9, tomato.tomato9] as const,
@@ -43,7 +47,7 @@ export const GROUND: Record<GroundColor, string> = {
   snow: sky.sky2,
   tundra: olive.olive6,
   ice: sky.sky5,
-  earth: sand.sand6,
+  earth: brown.brown6,
   stone: gray.gray7,
   lawn: grass.grass6,
   cobble: bronze.bronze6,
@@ -53,4 +57,33 @@ export const GROUND: Record<GroundColor, string> = {
   asphalt: slate.slate7,
   plaza: slate.slate4,
   pier: brown.brown7,
+  earthDark: brown.brown7,
+  field: lime.lime8,
+  fieldDark: brown.brown8,
+  gravel: slate.slate6,
+  rail: slate.slate10,
 };
+
+/** Wild ground, by kind. Each entry is a pair to blend between with noise. */
+export const NATURE = {
+  snow: [sky.sky2, sky.sky3],
+  tundra: [olive.olive6, sky.sky4],
+  grass: [grass.grass7, grass.grass8],
+  forest: [grass.grass8, jade.jade8],
+  plains: [lime.lime8, gold.gold8],
+  ash: [brown.brown9, slate.slate9],
+  rock: [olive.olive8, slate.slate8],
+  sand: [sand.sand5, sand.sand7],
+  seabed: [cyan.cyan6, cyan.cyan7],
+  cleared: [sand.sand6, sand.sand7],
+} as const;
+
+export const DISASTER_COLORS = {
+  lava: orange.orange9,
+  lavaGlow: tomato.tomato9,
+  ash: slate.slate9,
+  foam: sky.sky2,
+  tornado: olive.olive7,
+  warn: tomato.tomato9,
+  raid: tomato.tomato9,
+} as const;

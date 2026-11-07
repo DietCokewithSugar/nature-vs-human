@@ -25,8 +25,11 @@ import {
   CLASSES,
   CREATURES,
   CREATURE_BY_ID,
+  DISASTERS,
   DOMESTICS,
   Game,
+  LAIRS,
+  BALANCE,
   exportSave,
   formatMoney,
   importSave,
@@ -43,7 +46,7 @@ import { CityScene, type SceneView } from '../scene/city.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
 import { Sfx } from '../ui/sfx.ts';
-import { flash, focusEra, frame, modal, pushFloat, pushToast, setApp } from '../ui/store.ts';
+import { detail, flash, focusEra, frame, modal, pushFloat, pushToast, setApp } from '../ui/store.ts';
 import { GameLoop } from './loop.ts';
 
 const game = new Game(loadGame());
@@ -56,11 +59,27 @@ const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const scene = new CityScene(canvas);
 scene.setQuality(settings.value.quality);
 
-scene.onTap = ({ x, y }) => {
+function repel(x?: number, y?: number): void {
+  if (!game.repel()) return;
+  sfx.upgrade();
+  const at = x !== undefined && y !== undefined ? { x, y } : scene.raidScreen();
+  if (at) pushFloat(at.x, at.y, COPY.toast.repelled);
+}
+
+scene.onTap = ({ x, y, raid, lair }) => {
   if (!game.running) return;
+  if (raid) {
+    repel(x, y);
+    return;
+  }
   const gain = game.click();
   sfx.click();
   pushFloat(x, y, `+${formatMoney(gain)}`);
+  // Tapping a lair also opens its species' card.
+  if (lair && CREATURE_BY_ID[lair].era <= game.run.era) {
+    detail.value = lair;
+    modal.value = 'creature';
+  }
 };
 
 function sceneView(): SceneView {
@@ -80,6 +99,10 @@ function sceneView(): SceneView {
     rampage: run.rampageLeft > 0,
     intensity: income.gt(0) ? income.log10() : 0,
     outcome: run.result ? (run.result.won ? 'won' : 'lost') : 'running',
+    lairs: run.lairs,
+    raid: run.raid,
+    disaster: run.disaster,
+    creep: game.billProgress(),
   };
 }
 
@@ -125,6 +148,27 @@ function onEvent(e: CoreEvent): void {
     case 'active':
       if (e.id === 'sabotage' || e.id === 'rescue' || e.id === 'rampage') scene.pulse(e.id);
       break;
+    case 'raidStarted':
+      pushToast(COPY.toast.raid(LAIRS[e.target].name), 4000);
+      sfx.deny();
+      break;
+    case 'raidLanded':
+      pushToast(
+        COPY.toast.raidLanded(LAIRS[e.target].name, CREATURE_BY_ID[e.target].name, Math.round(BALANCE.lairs.loss * game.mods.lairLossMult * 100)),
+        4500,
+      );
+      sfx.deny();
+      break;
+    case 'disasterWarning':
+      sfx.deny();
+      break;
+    case 'disasterStarted': {
+      const def = DISASTERS[e.id];
+      pushToast(COPY.toast.disaster(def.name, `${CLASSES[def.boost.cls].name} ×${def.boost.x}`, Math.round(e.research * 1000) / 10), 5000);
+      sfx.era();
+      save();
+      break;
+    }
     case 'runEnded':
       sfx.evolve();
       if (e.result.won) scene.setForest(true);
@@ -181,6 +225,11 @@ setApp({
     location.reload();
   },
   startRun: (route: RouteId, difficulty: Difficulty) => game.startRun(route, difficulty),
+  repel: () => repel(),
+  raidScreen: () => scene.raidScreen(),
+  recenter: () => scene.recenter(),
+  cameraMoved: () => scene.cameraMoved,
+  lookAtLair: (id) => scene.lookAtLair(id),
   leaderboard,
   sfx,
 });
