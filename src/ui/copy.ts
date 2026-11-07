@@ -18,20 +18,20 @@ export const COPY = {
   },
 
   creatures: {
-    nextEra: '下一个时代',
     defected: (to: string) => `已跳反成${to}`,
-    ancient: '远古巨兽',
+    stamp: '跳反',
+    owned: '数量',
+    output: '每秒',
+    milestone: '下一档',
   },
 
   skills: {
     boosts: '强化',
-    fork: '二选一',
-    forkLocked: '天赋解锁',
-    forkClosed: '已选另一边',
-    owned: '已掌握',
+    or: '或',
+    forkLocked: '需天赋',
     empty: '暂时没货。人类也在想办法。',
     need: {
-      era: (era: string) => `${era}时代`,
+      era: (era: string) => `到${era}`,
       owned: (name: string, n: number) => `${n} 只${name}`,
       skill: (name: string) => `先学${name}`,
       fork: '先选分叉',
@@ -46,17 +46,15 @@ export const COPY = {
     sabotage: '捣毁实验室',
   } satisfies Record<ActiveId, string>,
 
-  breeding: { name: '繁殖巢', build: '加建', bred: '繁殖' },
+  breeding: { name: '繁殖巢', bred: '繁殖' },
 
-  tide: { name: '潮汐', rising: '涨潮', falling: '退潮', surging: '大潮中' },
+  tide: { name: '潮汐' },
 
   meta: {
     points: '基因点',
     routes: '开局路线',
     forks: '分支',
     perks: '天性',
-    maxed: '已满',
-    owned: '已解锁',
     level: (n: number, max: number) => `${n}/${max}`,
   },
 
@@ -160,7 +158,7 @@ export function eraName(era: EraId): string {
   return ({ 1: '冰河', 2: '古代', 3: '工业', 4: '现代' } as const)[era];
 }
 
-/** News ticker, one line at a time, from the eras reached this run. */
+/** Headlines that now and then pop up over the city, from the eras reached this run. */
 export const NEWS: Record<EraId, string[]> = {
   1: [
     '部落长老：蚂蚁搬走了半个山洞',

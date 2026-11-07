@@ -147,6 +147,8 @@ export class CityScene {
   private lastTime = performance.now();
   private quality: 'high' | 'low' = 'high';
   private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  private insetsGoal: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
+  private insetsSet = false;
   private forest = false;
 
   // Camera rig
@@ -215,9 +217,14 @@ export class CityScene {
     this.resize();
   }
 
+  /** The part of the canvas the UI covers. The framing eases to the new space rather than jumping. */
   setInsets(insets: Insets): void {
-    this.insets = insets;
-    this.resize();
+    this.insetsGoal = { ...insets };
+    if (!this.insetsSet) {
+      this.insetsSet = true;
+      this.insets = { ...insets };
+      this.applyView();
+    }
   }
 
   resize(): void {
@@ -230,6 +237,12 @@ export class CityScene {
       this.composer.setPixelRatio(dpr);
       this.composer.setSize(w, h);
     }
+    this.applyView();
+  }
+
+  private applyView(): void {
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
     const fw = Math.max(1, w - this.insets.left - this.insets.right);
     const fh = Math.max(1, h - this.insets.top - this.insets.bottom);
     const cx = this.insets.left + fw / 2;
@@ -238,6 +251,19 @@ export class CityScene {
     this.camera.setViewOffset(w, h, w / 2 - cx, h / 2 - cy, w, h);
     this.camera.updateProjectionMatrix();
     this.updateFit(fw, fh);
+  }
+
+  private easeInsets(dt: number): void {
+    let moved = false;
+    for (const k of ['top', 'right', 'bottom', 'left'] as const) {
+      const goal = this.insetsGoal[k];
+      const cur = this.insets[k];
+      if (cur === goal) continue;
+      const next = MathUtils.damp(cur, goal, 9, dt);
+      this.insets[k] = Math.abs(next - goal) < 0.5 ? goal : next;
+      moved = true;
+    }
+    if (moved) this.applyView();
   }
 
   private updateFit(fw: number, fh: number): void {
@@ -762,6 +788,7 @@ export class CityScene {
   // ── Camera & input ───────────────────────────────────────────
 
   private updateCamera(dt: number): void {
+    this.easeInsets(dt);
     this.target.x = MathUtils.damp(this.target.x, this.targetGoal.x, 2.6, dt);
     this.target.y = MathUtils.damp(this.target.y, this.targetGoal.y, 2.6, dt);
     this.target.z = MathUtils.damp(this.target.z, this.targetGoal.z, 2.6, dt);

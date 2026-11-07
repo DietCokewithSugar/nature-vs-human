@@ -1,28 +1,37 @@
 import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
+  BALANCE,
+  CLASSES,
+  CREATURE_BY_ID,
   D,
   DIFFICULTIES,
   DIFFICULTY_GATE,
   DIFFICULTY_NAMES,
+  DOMESTICS,
   ROUTES,
+  creatureProd,
   difficultyUnlocked,
   formatDuration,
+  formatNumber,
   metaMods,
+  milestonesReached,
+  nextMilestone,
   type Difficulty,
   type RouteId,
 } from '../core/index.ts';
 import credits from '../data/credits.json';
 import { NICKNAME_MAX, type BoardKind, type BoardResult } from '../data/leaderboard.ts';
-import { IconButton, Money, Segmented } from './common.tsx';
+import { CloseButton, Money, Num, Segmented, Thumb } from './common.tsx';
 import { COPY } from './copy.ts';
 import { describeEffects } from './describe.ts';
-import { IconClose, IconLock } from './icons.tsx';
-import { app, flash, floats, modal, pushToast, tab, toasts } from './store.ts';
+import { app, detail, flash, floats, frame, modal, pushToast, sheet, tab, toasts, viewInsets } from './store.ts';
 
 export function Toasts() {
+  const ins = viewInsets.value;
+  const x = ins.left + (window.innerWidth - ins.left - ins.right) / 2;
   return (
-    <div class="toasts" role="status" aria-live="polite">
+    <div class="toasts" role="status" aria-live="polite" style={{ left: `${x}px` }}>
       {toasts.value.map((t) => (
         <div key={t.id} class="toast" data-era={t.era}>
           <div class="toast-title">{t.title}</div>
@@ -51,7 +60,19 @@ export function Flash() {
   return <div key={n} class="flash" aria-hidden="true" />;
 }
 
-function Modal({ title, children, onClose, wide }: { title: string; children: ComponentChildren; onClose?: () => void; wide?: boolean }) {
+function Modal({
+  title,
+  children,
+  onClose,
+  wide,
+  kind,
+}: {
+  title: string;
+  children: ComponentChildren;
+  onClose?: () => void;
+  wide?: boolean;
+  kind?: string;
+}) {
   const close = onClose ?? (() => (modal.value = null));
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -62,12 +83,10 @@ function Modal({ title, children, onClose, wide }: { title: string; children: Co
   }, []);
   return (
     <div class="overlay" onClick={(e) => e.target === e.currentTarget && close()}>
-      <div class={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
+      <div class={`modal ${wide ? 'wide' : ''}`} data-kind={kind} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} ref={ref}>
         <header class="modal-head">
           <h2>{title}</h2>
-          <IconButton label="关闭" class="icon-btn ghost" onClick={close}>
-            <IconClose />
-          </IconButton>
+          <CloseButton onClick={close} />
         </header>
         <div class="modal-body">{children}</div>
       </div>
@@ -85,6 +104,8 @@ export function Modals() {
       return <SetupModal />;
     case 'result':
       return <ResultModal />;
+    case 'creature':
+      return <CreatureModal />;
     default:
       return null;
   }
@@ -118,7 +139,6 @@ function SetupModal() {
             >
               <span class="name">{r.name}</span>
               <span class="effect">{open ? describeEffects(r.effects) || COPY.setup.balanced : COPY.setup.locked}</span>
-              {!open && <IconLock class="choice-lock" />}
             </button>
           );
         })}
@@ -148,6 +168,60 @@ function SetupModal() {
       >
         {abandoning ? COPY.setup.abandonYes : COPY.setup.start}
       </button>
+    </Modal>
+  );
+}
+
+// ── Creature card ───────────────────────────────────────────────
+
+/** Everything the shop tile leaves out: the job title, the class, the output. */
+function CreatureModal() {
+  frame.value;
+  const id = detail.value;
+  if (!id) return null;
+  const def = CREATURE_BY_ID[id];
+  const g = app.game;
+  const run = g.run;
+  const c = run.creatures[id];
+  const defected = run.defected[id];
+  const taming = run.taming[id] ?? 0;
+  const next = nextMilestone(c.bought);
+  const reached = milestonesReached(c.bought);
+  return (
+    <Modal title={def.name} kind="creature">
+      <div class="profile" data-cls={def.cls}>
+        <Thumb model={def.model} class="profile-pic" />
+        <div class="profile-text">
+          <div class="profile-title">{def.title}</div>
+          <span class="cls-pill">{CLASSES[def.cls].name}</span>
+        </div>
+      </div>
+      <dl class="card stats">
+        <div>
+          <dt>{COPY.creatures.owned}</dt>
+          <dd class="num">
+            <Num value={defected ?? c.bought + c.bred} />
+          </dd>
+        </div>
+        <div>
+          <dt>{COPY.creatures.output}</dt>
+          <dd>{defected === undefined ? <Money value={creatureProd(run, g.mods, id)} /> : '—'}</dd>
+        </div>
+        <div>
+          {taming > 0.01 && defected === undefined ? (
+            <>
+              <dt>{COPY.run.taming}</dt>
+              <dd class="num danger">{Math.floor(taming * 100)}%</dd>
+            </>
+          ) : (
+            <>
+              <dt>{COPY.creatures.milestone}</dt>
+              <dd class="num">{next ? `${c.bought}/${next}` : `×${formatNumber(BALANCE.milestoneMult ** reached)}`}</dd>
+            </>
+          )}
+        </div>
+      </dl>
+      {defected !== undefined && <p class="ending-body">{COPY.creatures.defected(DOMESTICS[def.tame!].name)}</p>}
     </Modal>
   );
 }
@@ -184,6 +258,7 @@ function ResultModal() {
           class="btn wide"
           onClick={() => {
             tab.value = 'meta';
+            if (sheet.value === 'closed') sheet.value = 'half';
             close();
           }}
         >
