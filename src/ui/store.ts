@@ -70,6 +70,13 @@ export interface AppContext {
   importSave: (text: string) => boolean;
   resetSave: () => void;
   startRun: (route: RouteId, difficulty: Difficulty) => boolean;
+  /** Drive off the raid party. */
+  repel: () => void;
+  /** Where the raid party is on screen, or null. */
+  raidScreen: () => { x: number; y: number; onScreen: boolean } | null;
+  recenter: () => void;
+  cameraMoved: () => boolean;
+  lookAtLair: (id: CreatureId) => void;
   leaderboard: import('../data/leaderboard.ts').Leaderboard;
   sfx: import('./sfx.ts').Sfx;
 }

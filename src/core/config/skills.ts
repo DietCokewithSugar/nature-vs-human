@@ -267,6 +267,17 @@ export const SKILLS: readonly SkillDef[] = [
     req: [{ type: 'skill', id: 'ge_night' }, { type: 'era', era: 2 }],
   },
   {
+    id: 'ge_burrows',
+    branch: 'general',
+    name: '狡兔三窟',
+    cost: at('wildcat', 6),
+    effects: [
+      { type: 'lairRegrowMult', x: 0.5 },
+      { type: 'lairLossMult', x: 0.5 },
+    ],
+    req: [{ type: 'era', era: 2 }],
+  },
+  {
     id: 'ge_sabotage',
     branch: 'general',
     name: '捣毁实验室',

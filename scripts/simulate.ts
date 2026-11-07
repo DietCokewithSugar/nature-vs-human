@@ -30,12 +30,14 @@ export interface BotProfile {
   actives: boolean;
   /** Buys anti-research and anti-taming skills when it can. */
   defends: boolean;
+  /** Drives off raids: 'always' every second, 'check' only when it looks at the page. */
+  repels: 'always' | 'check';
 }
 
 export const PROFILES: BotProfile[] = [
-  { name: 'engaged', cps: (t) => (t < 120 ? 6 : 1), checkEvery: 0, actives: true, defends: true },
-  { name: 'casual', cps: (t) => (t < 90 ? 3 : 0.3), checkEvery: 45, actives: true, defends: true },
-  { name: 'idle', cps: (t) => (t < 60 ? 3 : 0), checkEvery: 180, actives: false, defends: false },
+  { name: 'engaged', cps: (t) => (t < 120 ? 6 : 1), checkEvery: 0, actives: true, defends: true, repels: 'always' },
+  { name: 'casual', cps: (t) => (t < 90 ? 3 : 0.3), checkEvery: 45, actives: true, defends: true, repels: 'check' },
+  { name: 'idle', cps: (t) => (t < 60 ? 3 : 0), checkEvery: 180, actives: false, defends: false, repels: 'check' },
 ];
 
 export interface RunLog {
@@ -46,13 +48,25 @@ export interface RunLog {
   eras: Record<number, number | null>;
   countermeasures: { t: number; cls: string }[];
   defected: { t: number; id: string }[];
+  raids: { landed: number; repelled: number };
+  disasters: { t: number; id: string }[];
   research: number;
   progress: number;
   points: number;
   samples: { t: number; earned: number; research: number }[];
 }
 
-const DEFENSIVE = new Set(['ge_night', 'ge_disguise', 'ge_wipe', 'hu_wild', 'hu_rescue', 'ge_sabotage', 'as_resist', 'tk_hide']);
+const DEFENSIVE = new Set([
+  'ge_night',
+  'ge_disguise',
+  'ge_wipe',
+  'hu_wild',
+  'hu_rescue',
+  'ge_sabotage',
+  'ge_burrows',
+  'as_resist',
+  'tk_hide',
+]);
 
 function incomeWith(game: Game, apply: () => void, revert: () => void): number {
   apply();
@@ -61,12 +75,21 @@ function incomeWith(game: Game, apply: () => void, revert: () => void): number {
   return v;
 }
 
-export function simulate(profile: BotProfile, difficulty: Difficulty = 'normal', route: RouteId = 'beasts', state?: GameState): RunLog {
+/** Fixed weather per run so reports are reproducible. */
+export const SEED = 20261107;
+
+export function simulate(
+  profile: BotProfile,
+  difficulty: Difficulty = 'normal',
+  route: RouteId = 'beasts',
+  state?: GameState,
+  seed: number = SEED,
+): RunLog {
   const base = state ?? createState();
   // Simulate every difficulty without having to win the earlier ones first.
   base.meta.wins = { normal: 1, hard: 1, brutal: 1 };
   const game = new Game(base);
-  if (!game.startRun(route, difficulty)) throw new Error(`cannot start ${route}/${difficulty}`);
+  if (!game.startRun(route, difficulty, seed)) throw new Error(`cannot start ${route}/${difficulty}`);
   const log: RunLog = {
     profile: profile.name,
     difficulty,
@@ -75,6 +98,8 @@ export function simulate(profile: BotProfile, difficulty: Difficulty = 'normal',
     eras: { 1: 0, 2: null, 3: null, 4: null },
     countermeasures: [],
     defected: [],
+    raids: { landed: 0, repelled: 0 },
+    disasters: [],
     research: 0,
     progress: 0,
     points: 0,
@@ -85,6 +110,9 @@ export function simulate(profile: BotProfile, difficulty: Difficulty = 'normal',
     if (e.type === 'eraUnlocked') log.eras[e.era] = t;
     if (e.type === 'countermeasure') log.countermeasures.push({ t, cls: e.cm.cls });
     if (e.type === 'defected') log.defected.push({ t, id: e.id });
+    if (e.type === 'raidLanded') log.raids.landed++;
+    if (e.type === 'raidRepelled') log.raids.repelled++;
+    if (e.type === 'disasterStarted') log.disasters.push({ t, id: e.id });
   });
 
   let nextCheck = 0;
@@ -101,6 +129,8 @@ export function simulate(profile: BotProfile, difficulty: Difficulty = 'normal',
       if (id === 'rescue' && Object.values(r.taming).every((v) => (v ?? 0) < 0.3)) continue;
       game.activate(id);
     }
+
+    if (profile.repels === 'always' || r.time >= nextCheck) game.repel();
 
     if (r.time >= nextCheck) {
       nextCheck = r.time + profile.checkEvery;
@@ -186,7 +216,7 @@ function main() {
     for (const p of PROFILES) {
       const r = simulate(p, d);
       console.log(
-        `${d.padEnd(6)} ${p.name.padEnd(8)} ${r.won ? 'WIN ' : 'LOSE'} ${m(r.time).padStart(6)} | 古代 ${m(r.eras[2] ?? null)} 工业 ${m(r.eras[3] ?? null)} 现代 ${m(r.eras[4] ?? null)} | 研究 ${(r.research * 100).toFixed(0)}% 账单 ${(r.progress * 100).toFixed(0)}% | 反制 ${r.countermeasures.map((c) => `${c.cls}@${m(c.t)}`).join(' ')} | 跳反 ${r.defected.map((x) => `${x.id}@${m(x.t)}`).join(' ') || '无'} | +${r.points}点`,
+        `${d.padEnd(6)} ${p.name.padEnd(8)} ${r.won ? 'WIN ' : 'LOSE'} ${m(r.time).padStart(6)} | 古代 ${m(r.eras[2] ?? null)} 工业 ${m(r.eras[3] ?? null)} 现代 ${m(r.eras[4] ?? null)} | 研究 ${(r.research * 100).toFixed(0)}% 账单 ${(r.progress * 100).toFixed(0)}% | 反制 ${r.countermeasures.map((c) => `${c.cls}@${m(c.t)}`).join(' ')} | 跳反 ${r.defected.map((x) => `${x.id}@${m(x.t)}`).join(' ') || '无'} | 端老窝 ${r.raids.landed}/${r.raids.landed + r.raids.repelled} | 灾难 ${r.disasters.map((x) => `${x.id}@${m(x.t)}`).join(' ')} | +${r.points}点`,
       );
     }
   }

@@ -49,6 +49,10 @@ export function describeEffect(e: Effect): string | null {
       return E.unlockActive(COPY.actives[e.id]);
     case 'convert':
       return E.convert(CREATURE_BY_ID[e.from].name, CREATURE_BY_ID[e.to].name);
+    case 'lairRegrowMult':
+      return E.lairRegrowMult(x(1 / e.x));
+    case 'lairLossMult':
+      return E.lairLossMult(pct(1 - e.x));
     case 'unlockEra':
       return null;
   }

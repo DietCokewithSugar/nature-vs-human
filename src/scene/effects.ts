@@ -43,9 +43,9 @@ interface Ring {
   radius: number;
 }
 
-const DEBRIS_MAX = 260;
-const PUFF_MAX = 48;
-const RING_MAX = 8;
+const DEBRIS_MAX = 360;
+const PUFF_MAX = 96;
+const RING_MAX = 14;
 const GRAVITY = -22;
 
 /** Pooled particles: flying debris, smoke/dust puffs and ground shock rings. */

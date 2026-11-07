@@ -4,7 +4,18 @@ import { META_BY_ID, ROUTES } from './config/meta.ts';
 import { SKILL_BY_ID } from './config/skills.ts';
 import { UPGRADE_BY_ID } from './config/upgrades.ts';
 import { createMeta, createRun, SAVE_VERSION, type GameState, type MetaState, type RunState } from './state.ts';
-import { CLASS_IDS, DIFFICULTIES, type ActiveId, type CreatureId, type Difficulty, type EraId, type RouteId } from './types.ts';
+import { randomSeed } from './rng.ts';
+import {
+  CLASS_IDS,
+  DIFFICULTIES,
+  DISASTER_IDS,
+  type ActiveId,
+  type CreatureId,
+  type Difficulty,
+  type DisasterId,
+  type EraId,
+  type RouteId,
+} from './types.ts';
 
 type Json = Record<string, unknown>;
 
@@ -40,6 +51,8 @@ const MIGRATIONS: Record<number, Migration> = {
       run: null,
     };
   },
+  // v3 added lairs, raids and disasters. parseRun fills their defaults.
+  2: (raw) => raw,
 };
 
 function createMetaJson(): Json {
@@ -148,6 +161,25 @@ function parseRun(raw: Json): RunState {
     if (['surge', 'rescue', 'rampage', 'sabotage'].includes(k)) r.cooldowns[k as ActiveId] = Math.max(0, num(v));
   }
   r.rampageLeft = Math.max(0, num(raw.rampageLeft));
+  const cap = (v: unknown, max: number) => Math.max(0, Math.min(max, num(v)));
+  for (const [k, v] of Object.entries(obj(raw.lairs))) {
+    const left = cap(v, 3600);
+    if (CREATURE_IDS.includes(k as CreatureId) && left > 0) r.lairs[k as CreatureId] = left;
+  }
+  r.raidMeter = unit(raw.raidMeter);
+  const raid = raw.raid ? obj(raw.raid) : null;
+  if (raid && CREATURE_IDS.includes(raid.target as CreatureId)) {
+    const total = Math.max(1, cap(raid.total, 600));
+    r.raid = { target: raid.target as CreatureId, total, left: Math.min(total, cap(raid.left, 600)) };
+  }
+  const dis = raw.disaster ? obj(raw.disaster) : null;
+  if (dis && DISASTER_IDS.includes(dis.id as DisasterId) && (dis.phase === 'warning' || dis.phase === 'active')) {
+    const wrecked = Array.isArray(dis.wrecked) ? dis.wrecked.filter((x) => CREATURE_IDS.includes(x as CreatureId)) : [];
+    r.disaster = { id: dis.id as DisasterId, phase: dis.phase, left: cap(dis.left, 600), wrecked: wrecked as CreatureId[] };
+  }
+  if (typeof raw.nextDisaster === 'number') r.nextDisaster = cap(raw.nextDisaster, 3600);
+  r.lastDisaster = DISASTER_IDS.includes(raw.lastDisaster as DisasterId) ? (raw.lastDisaster as DisasterId) : null;
+  r.rng = typeof raw.rng === 'number' && Number.isFinite(raw.rng) ? raw.rng >>> 0 : randomSeed();
   r.clicks = int(raw.clicks);
   r.time = Math.max(0, num(raw.time));
   const res = raw.result ? obj(raw.result) : null;

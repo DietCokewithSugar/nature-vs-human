@@ -4,7 +4,15 @@ import {
   CREATURES,
   CREATURE_BY_ID,
   D,
+  DISASTERS,
   Game,
+  LAIRS,
+  SAVE_VERSION,
+  computeMods,
+  disasterResearchLoss,
+  marchTime,
+  raidRate,
+  researchRate,
   SKILLS,
   SKILL_BY_ID,
   UPGRADES,
@@ -85,8 +93,9 @@ describe('a run', () => {
       g.buySkill('sw_nest');
       g.buySkill('ma_moon');
       g.run.nests = 3;
-      // Keep the humans quiet so both runs stay identical.
+      // Keep the humans and the weather quiet so both runs stay identical.
       g.mods.researchMult = 0;
+      g.run.nextDisaster = Infinity;
       return g;
     };
     const a = make();
@@ -184,6 +193,142 @@ describe('taming', () => {
   });
 });
 
+describe('lairs and raids', () => {
+  it('raids come as fast as research, and stop when research does', () => {
+    const g = rich();
+    g.buyCreature('ant', 20);
+    expect(raidRate(g.run, g.mods)).toBeCloseTo(researchRate(g.run, g.mods) * BALANCE.raids.perResearch);
+    g.mods.researchMult = 0;
+    g.run.nextDisaster = Infinity;
+    g.advance(3600);
+    expect(g.run.raid).toBeNull();
+    expect(g.run.raidMeter).toBe(0);
+  });
+
+  it('a raid goes for the best earner and wrecks its lair unless repelled', () => {
+    const g = rich();
+    g.buyCreature('ant', 10);
+    g.buyCreature('wolf', 20);
+    const events: string[] = [];
+    g.on((e) => events.push(e.type));
+    g.run.raidMeter = 0.99999;
+    g.advance(1);
+    expect(g.run.raid?.target).toBe('wolf');
+    expect(g.run.raid?.total).toBeCloseTo(marchTime('wolf'));
+    const before = g.mods.creatureMult.wolf;
+    g.advance(marchTime('wolf'));
+    expect(g.run.raid).toBeNull();
+    expect(g.run.lairs.wolf).toBeGreaterThan(0);
+    expect(g.mods.creatureMult.wolf / before).toBeCloseTo(1 - BALANCE.lairs.loss);
+    expect(events).toContain('raidLanded');
+    // A wrecked lair is not raided again; the next target is the ant hill.
+    g.run.raidMeter = 0.99999;
+    g.advance(1);
+    expect(g.run.raid?.target).toBe('ant');
+    expect(g.repel()).toBe(true);
+    expect(g.run.raid).toBeNull();
+    expect(g.run.lairs.ant).toBeUndefined();
+    expect(g.repel()).toBe(false);
+    // The wolf den grows back on its own.
+    g.advance(BALANCE.lairs.regrow);
+    expect(g.run.lairs.wolf).toBeUndefined();
+    expect(g.mods.creatureMult.wolf).toBeCloseTo(before);
+    expect(events).toContain('lairRegrown');
+  });
+
+  it('lairs behind water take longer to reach', () => {
+    expect(LAIRS.octopus.zone).toBe('coast');
+    expect(marchTime('octopus')).toBeGreaterThan(marchTime('wolf'));
+  });
+
+  it('狡兔三窟 halves the loss and the time to regrow', () => {
+    const g = rich();
+    openEras(g, 2);
+    expect(g.buySkill('ge_burrows')).toBe(true);
+    g.buyCreature('rat', 10);
+    g.run.raid = { target: 'rat', left: 0.5, total: 25 };
+    const before = g.mods.creatureMult.rat;
+    g.advance(1);
+    expect(g.run.lairs.rat).toBeCloseTo(BALANCE.lairs.regrow * 0.5 - 0.5, 3);
+    expect(g.mods.creatureMult.rat / before).toBeCloseTo(1 - BALANCE.lairs.loss * 0.5);
+  });
+});
+
+describe('disasters', () => {
+  const seeded = (seed: number) => {
+    const s = createState();
+    s.run.rng = seed;
+    return rich(s);
+  };
+
+  it('the ice age stays quiet', () => {
+    const g = seeded(1);
+    g.mods.researchMult = 0;
+    g.advance(3600);
+    expect(g.run.disaster).toBeNull();
+    expect(g.run.nextDisaster).toBe(BALANCE.disasters.first);
+  });
+
+  it('warn, hit, then wait: the same seed gives the same weather', () => {
+    const play = () => {
+      const g = seeded(42);
+      openEras(g, 3);
+      g.buyCreature('octopus', 10);
+      g.buyCreature('pigeon', 10);
+      g.buyCreature('bison', 10);
+      g.buyCreature('mosquito', 10);
+      g.run.research = 0.5;
+      const log: string[] = [];
+      g.on((e) => {
+        if (e.type === 'disasterWarning' || e.type === 'disasterStarted' || e.type === 'disasterEnded') log.push(`${e.type}:${e.id}`);
+      });
+      g.advance(BALANCE.disasters.first + 0.001);
+      expect(g.run.disaster?.phase).toBe('warning');
+      return { g, log };
+    };
+    const a = play();
+    const b = play();
+    expect(a.g.run.disaster!.id).toBe(b.g.run.disaster!.id);
+
+    const { g, log } = a;
+    const def = DISASTERS[g.run.disaster!.id];
+    const boostedBefore = computeMods(g.state).classMult[def.boost.cls];
+    // The warning has run for 0.001 s already.
+    g.advance(def.warn - 0.002);
+    expect(g.run.disaster?.phase).toBe('warning');
+    const research = g.run.research;
+    g.advance(0.001);
+    expect(g.run.disaster?.phase).toBe('active');
+    expect(g.mods.classMult[def.boost.cls] / boostedBefore).toBeCloseTo(def.boost.x);
+    expect(g.run.research).toBeCloseTo(research - disasterResearchLoss(g.run, def.id), 4);
+    for (const id of g.run.disaster!.wrecked) {
+      expect(LAIRS[id].zone).toBe(def.zone);
+      expect(CREATURE_BY_ID[id].cls).not.toBe(def.boost.cls);
+      expect(g.run.lairs[id]).toBeGreaterThan(0);
+    }
+    g.advance(def.duration);
+    expect(g.run.disaster).toBeNull();
+    expect(g.run.lastDisaster).toBe(def.id);
+    expect(g.run.nextDisaster).toBeGreaterThanOrEqual(BALANCE.disasters.gap[0]);
+    expect(g.run.nextDisaster).toBeLessThanOrEqual(BALANCE.disasters.gap[1]);
+    expect(log).toEqual([`disasterWarning:${def.id}`, `disasterStarted:${def.id}`, `disasterEnded:${def.id}`]);
+  });
+
+  it('a tsunami spares the marines and hurts the humans more once they have a harbour', () => {
+    const g = seeded(7);
+    openEras(g, 2);
+    g.run.research = 0.5;
+    const early = disasterResearchLoss(g.run, 'tsunami');
+    g.run.creatures.crocodile.bought = 1;
+    expect(g.buyUpgrade('era_3')).toBe(true);
+    expect(disasterResearchLoss(g.run, 'tsunami')).toBeGreaterThan(early);
+    g.run.disaster = { id: 'tsunami', phase: 'warning', left: 0.5, wrecked: [] };
+    g.advance(1);
+    expect(g.run.disaster!.wrecked).toContain('mosquito');
+    expect(g.run.disaster!.wrecked.some((id) => CREATURE_BY_ID[id].cls === 'marine')).toBe(false);
+  });
+});
+
 describe('skill tree', () => {
   it('fork side B needs a meta unlock, and picking one side closes the other', () => {
     const g = rich();
@@ -260,9 +405,31 @@ describe('save', () => {
     expect(importSave(exportSave(g.state)).meta.lifetime.eq(g.meta.lifetime)).toBe(true);
   });
 
+  it('keeps lairs, raids and disasters, and loads v2 saves with defaults', () => {
+    const g = rich();
+    g.run.lairs.wolf = 40;
+    g.run.raid = { target: 'ant', left: 12, total: 25 };
+    g.run.disaster = { id: 'tornado', phase: 'active', left: 9, wrecked: ['bison'] };
+    g.run.nextDisaster = 77;
+    g.run.lastDisaster = 'volcano';
+    g.run.rng = 123456;
+    const back = deserialize(JSON.parse(JSON.stringify(serialize(g.state))));
+    expect(back.run.lairs.wolf).toBe(40);
+    expect(back.run.raid).toEqual({ target: 'ant', left: 12, total: 25 });
+    expect(back.run.disaster).toEqual({ id: 'tornado', phase: 'active', left: 9, wrecked: ['bison'] });
+    expect(back.run.nextDisaster).toBe(77);
+    expect(back.run.lastDisaster).toBe('volcano');
+    expect(back.run.rng).toBe(123456);
+    const old = deserialize({ version: 2, meta: {}, run: { money: '10', era: 2 } });
+    expect(old.version).toBe(SAVE_VERSION);
+    expect(old.run.lairs).toEqual({});
+    expect(old.run.raid).toBeNull();
+    expect(old.run.nextDisaster).toBe(BALANCE.disasters.first);
+  });
+
   it('migrates a v1 save into meta progress', () => {
     const s = deserialize({ version: 1, lifetimeEarned: '1e20', genes: 400, money: '5' });
-    expect(s.version).toBe(2);
+    expect(s.version).toBe(SAVE_VERSION);
     expect(s.meta.lifetime.toNumber()).toBe(1e20);
     expect(s.meta.points).toBe(60);
     expect(s.run.result).toBeNull();

@@ -10,6 +10,7 @@ import {
   creatureCost,
   creatureCostN,
   creaturesOfEra,
+  formatDuration,
   isCreatureVisible,
   meets,
   metaFree,
@@ -170,8 +171,17 @@ function CreatureTile({ def }: { def: CreatureDef }) {
   const fresh = c.bought + c.bred === 0;
   const taming = run.taming[def.id] ?? 0;
   const tamingShown = taming > 0.01;
+  const wrecked = run.lairs[def.id] ?? 0;
+  const raided = run.raid?.target === def.id;
   return (
-    <div class="tile" data-cls={def.cls} data-fresh={fresh || undefined} data-hot={taming > 0.7 || undefined}>
+    <div
+      class="tile"
+      data-cls={def.cls}
+      data-fresh={fresh || undefined}
+      data-hot={taming > 0.7 || undefined}
+      data-wrecked={wrecked > 0 || undefined}
+      data-raided={raided || undefined}
+    >
       <button type="button" class="tile-pic" aria-label={def.name} onClick={open}>
         <Thumb model={def.model} />
         {c.bought > 0 && (
@@ -182,6 +192,11 @@ function CreatureTile({ def }: { def: CreatureDef }) {
         {c.bred >= 1 && (
           <span class="tile-bred num">
             +<Num value={c.bred} />
+          </span>
+        )}
+        {wrecked > 0 && (
+          <span class="tile-wreck num" title={COPY.lairs.wrecked(formatDuration(wrecked))}>
+            {COPY.lairs.wreckedShort} {Math.ceil(wrecked)}
           </span>
         )}
       </button>

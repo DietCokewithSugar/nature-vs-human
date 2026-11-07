@@ -9,7 +9,9 @@ import {
   DIFFICULTY_GATE,
   DIFFICULTY_NAMES,
   DOMESTICS,
+  LAIRS,
   ROUTES,
+  ZONES,
   creatureProd,
   difficultyUnlocked,
   formatDuration,
@@ -222,6 +224,22 @@ function CreatureModal() {
         </div>
       </dl>
       {defected !== undefined && <p class="ending-body">{COPY.creatures.defected(DOMESTICS[def.tame!].name)}</p>}
+      <div class="lair-line" data-wrecked={(run.lairs[id] ?? 0) > 0 || undefined}>
+        <span>
+          {COPY.lairs.home}：{COPY.lairs.where(LAIRS[id].name, ZONES[LAIRS[id].zone].name)}
+          {(run.lairs[id] ?? 0) > 0 && <b> · {COPY.lairs.wrecked(formatDuration(run.lairs[id]!))}</b>}
+        </span>
+        <button
+          type="button"
+          class="chunk"
+          onClick={() => {
+            modal.value = null;
+            app.lookAtLair(id);
+          }}
+        >
+          {COPY.lairs.show}
+        </button>
+      </div>
     </Modal>
   );
 }
