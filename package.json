@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "sim": "node --experimental-strip-types --no-warnings scripts/simulate.ts",
     "assets": "node scripts/fetch-assets.mjs",
-    "report": "node --experimental-strip-types --no-warnings scripts/report.ts"
+    "report": "node --experimental-strip-types --no-warnings scripts/report.ts",
+    "models": "node scripts/build-models.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fredoka": "5.2.10",

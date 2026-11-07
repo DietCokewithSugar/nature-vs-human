@@ -1,6 +1,6 @@
 /**
  * Dev-only model gallery: every creature view, domestic animal and human in a grid.
- * Open /lab.html with the dev server. Not part of the production build.
+ * Open /lab.html with the dev server (/lab.html?set=world for lairs and landmarks). Not part of the production build.
  * ?anim=Walk plays that clip; ?side shows profiles.
  */
 import {
@@ -20,13 +20,25 @@ import { HumanRig } from '../scene/humanRig.ts';
 import { PALETTE } from '../scene/palette.ts';
 
 const params = new URLSearchParams(location.search);
-const keys = (params.get('only')?.split(',') ?? [
-  'ant', 'wolf', 'sabertooth', 'cavebear', 'mammoth',
-  'locust', 'rat', 'wildcat', 'boar', 'crocodile',
-  'mosquito', 'pigeon', 'octopus', 'shark', 'bison',
-  'termite', 'crow', 'tiger', 'rhino', 'elephant',
-  'dog', 'cat', 'pig', 'hunter-1', 'hunter-2', 'hunter-3', 'hunter-4', 'scientist',
-]);
+// ?set=world shows the models built in Blender (tools/blender/models.py): lairs, landmarks, outposts, props.
+const SETS: Record<string, string[]> = {
+  creatures: [
+    'ant', 'wolf', 'sabertooth', 'cavebear', 'mammoth',
+    'locust', 'rat', 'wildcat', 'boar', 'crocodile',
+    'mosquito', 'pigeon', 'octopus', 'shark', 'bison',
+    'termite', 'crow', 'tiger', 'rhino', 'elephant',
+    'dog', 'cat', 'pig', 'hunter-1', 'hunter-2', 'hunter-3', 'hunter-4', 'scientist',
+  ],
+  world: [
+    'lair-anthill', 'lair-den', 'lair-cave', 'lair-cave-big', 'lair-glacier',
+    'lair-flowers', 'lair-burrow', 'lair-thicket', 'lair-wallow', 'lair-reeds',
+    'lair-pond', 'lair-nest-tree', 'lair-reef', 'lair-reef-deep', 'lair-prairie',
+    'lair-termite-mound', 'lair-dead-tree', 'lair-jungle', 'lair-wallow-big', 'lair-baobab',
+    'volcano', 'watchtower', 'wind-turbine', 'oil-rig', 'mine-head', 'geothermal',
+    'grass-tuft', 'fern', 'wildflowers', 'vines', 'stump', 'fence', 'log-pile',
+  ],
+};
+const keys = params.get('only')?.split(',') ?? SETS[params.get('set') ?? 'creatures'] ?? SETS.creatures!;
 const cols = Number(params.get('cols') ?? 7);
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
