@@ -81,6 +81,8 @@
 - [Water Tower](https://polyfork.dev/asset/water-tower-7eb7ec)
 - [Grain Silo](https://polyfork.dev/asset/grain-silo-58ca67)
 
+本项目自制的模型：老窝（蚁丘、狼窝、岩洞、冰川谷、花丛、鼠洞、灌木丛、密林、泥潭、芦苇、死水塘、鸟巢树、枯树、礁石、草原、白蚁丘、猴面包树）、火山、人类前哨站（瞭望塔、风力发电机、钻井平台、矿井、地热站）和小道具（草丛、蕨类、野花、藤蔓、树桩、围栏、木材堆），由 Blender 脚本 tools/blender/models.py 生成。
+
 ## 字体
 
 - [ZCOOL KuaiLe 站酷快乐体](https://fonts.google.com/specimen/ZCOOL+KuaiLe)，SIL Open Font License 1.1

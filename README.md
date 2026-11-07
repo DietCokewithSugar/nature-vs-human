@@ -6,6 +6,9 @@
 - 你用破坏金额招募生物、学技能，目标是付清"人类账单"。
 - 人类在研究反制手段：研究每过一道坎，就会针对你最强的兵种出手；研究满了你就输。
 - 猎人会驯化你的狼、野猫、野猪。被抓走的物种会整批跳反，变成人类的狗、家猫、家猪，反过来对付你。
+- 整局都在同一张地图上：人类占东边，平地、直线、逐代升级；自然占西边和几块飞地，水多、地形乱。开局双方泾渭分明，到后期城市的前哨伸进荒野，藤蔓也爬进街道。
+- 每种生物都从自己的老窝出来，比如礁石出章鱼、花丛出蝗虫、狼窝出狼。人类会派人来端老窝，点一下就能赶走。
+- 从古代开始会随机发生海啸、龙卷风、火山爆发。双方都会挨砸，但总有一个兵种趁机变强。
 - 每局结算局外点数，用来解锁新开局路线、技能树的分叉 B 和永久天性。难度分普通、困难、残酷。
 
 规则详见 [docs/design.md](docs/design.md)，数值验证见 [docs/balance.md](docs/balance.md)。没有离线收益：页面开着就算在线，关掉不累计。
@@ -19,6 +22,7 @@ npm install
 npm run dev          # http://localhost:5173
 npm test             # 逻辑核心 + 排行榜 SQL 测试
 npm run report       # 让机器人打完整局，重新生成 docs/balance.md
+npm run models       # 用 Blender 重新生成自制模型（见下面"素材"）
 npm run build        # 类型检查 + 打包到 dist/
 ```
 
@@ -31,7 +35,7 @@ npm run build        # 类型检查 + 打包到 dist/
 | 层 | 目录 | 内容 |
 |---|---|---|
 | 外壳 | `src/shell/` | 启动、20 Hz 固定步长循环、自动存档。以后加 Steam（Electron/Tauri）和手机（Capacitor）外壳，只换这一层 |
-| 表现层 | `src/scene/`、`src/ui/`、`src/styles/` | three.js 城市场景和 Preact 界面。只读状态、发指令 |
+| 表现层 | `src/scene/`、`src/ui/`、`src/styles/` | three.js 地图和 Preact 界面。只读状态、发指令。地图数据在 `src/scene/world.ts`（地块、领地、老窝、灾区、各时代取景），地形在 `terrain.ts`，寻路在 `nav.ts` |
 | 逻辑核心 | `src/core/` | Tick、经济公式、进度规则、转生。纯 TypeScript，可以在 Node 里直接跑 |
 | 数据 | `src/core/config/`、`src/data/`、`supabase/` | 配置表、大数（break_infinity.js）、本地存档与迁移、排行榜 |
 
@@ -72,11 +76,14 @@ npm run build        # 类型检查 + 打包到 dist/
 免费素材里没有猛犸、剑齿虎、犀牛、老虎、野猪、蚊子这些，所以在 Polyfork 的动画模型上做了改装（`src/scene/kitbash.ts`）：用 Radix 配色重新上色，再把程序生成的象牙、獠牙、角、口器挂到头部骨骼上，跟着动画动。人物模型没有自带动画，走路动作由 `src/scene/humanRig.ts` 驱动。冰河时代的帐篷由代码生成。
 
 - `npm run assets`：按 `scripts/assets.manifest.json` 下载模型并用 meshopt 压缩（约 4.4 MB），同时重新生成署名文件。
+- 老窝、火山、人类前哨站（瞭望塔、风车、钻井平台、矿井、地热站）和地图上的小道具是项目自制的，由 `tools/blender/models.py` 用 Blender 的 Python 模块生成，风格对齐 Polyfork：单一材质、顶点色、平直着色。重新生成需要先安装 Blender：`pip install bpy==5.2.3`（Python 3.13），然后运行 `npm run models`。如果 bpy 装在别的 Python 里，用 `BLENDER_PYTHON=/path/to/python npm run models`。
+- 开发服务器上打开 `/lab.html?set=world`：自制模型的陈列页。
 - 开发服务器上打开 `/lab.html`：模型陈列页，逐个检查改装效果（不会打进生产包）。
 - 生物图标由 three.js 在运行时从模型渲染；音效用 Web Audio 合成，没有音频文件。
 
 ## 后续
 
-- 下一步：更多开局路线和分叉、兽群分派（把单位派到不同城区）、成就
+- 下一步：更多开局路线和分叉、成就、按场地出现的特殊灾难
+- 双人对抗：一边当人类，一边当自然。人类方的突袭和研究都由配置驱动，以后可以换成真人操作
 - Steam：用 Electron 或 Tauri 套壳，接 Steamworks 成就和云存档
 - 手机：用 Capacitor 套壳，界面已经适配竖屏
