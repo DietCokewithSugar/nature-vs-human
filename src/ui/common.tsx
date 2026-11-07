@@ -1,7 +1,6 @@
-import type { ComponentChildren, JSX } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import { formatNumber, type DecimalSource } from '../core/index.ts';
-import { thumbnail } from '../scene/thumbnails.ts';
+import { thumbnail, type ThumbOptions } from '../scene/thumbnails.ts';
 
 /**
  * A short-scale number whose suffix ("Oc", "Qa") is set in the UI face:
@@ -29,34 +28,23 @@ export function Money({ value, class: cls }: { value: DecimalSource; class?: str
   );
 }
 
-export function Thumb({ model, size = 40 }: { model: string; size?: number }) {
+/** A model rendered to a transparent picture. Sized by CSS. */
+export function Thumb({ model, crop, fill, class: cls }: { model: string; class?: string } & ThumbOptions) {
   const [src, setSrc] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    thumbnail(model)
+    thumbnail(model, { crop, fill })
       .then((url) => live && setSrc(url))
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [model]);
-  return (
-    <span class="thumb" style={{ width: size, height: size }}>
-      {src && <img src={src} alt="" width={size} height={size} draggable={false} />}
-    </span>
-  );
+  }, [model, crop, fill]);
+  return <span class={`thumb ${cls ?? ''}`}>{src && <img src={src} alt="" draggable={false} />}</span>;
 }
 
-export function IconButton(
-  props: JSX.HTMLAttributes<HTMLButtonElement> & { label: string; children: ComponentChildren },
-) {
-  const { label, children, ...rest } = props;
-  return (
-    <button type="button" class="icon-btn" aria-label={label} title={label} {...rest}>
-      {children}
-    </button>
-  );
-}
+/** The scientist stands for the humans' research wherever it shows up. */
+export const SCIENTIST = { model: 'scientist', crop: 0.42 } as const;
 
 export function Segmented<T extends string | number>({
   value,
@@ -83,5 +71,13 @@ export function Segmented<T extends string | number>({
         </button>
       ))}
     </div>
+  );
+}
+
+export function CloseButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button type="button" class="close" aria-label="关闭" onClick={onClick}>
+      <span aria-hidden="true">×</span>
+    </button>
   );
 }

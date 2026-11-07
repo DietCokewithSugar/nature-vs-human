@@ -1,5 +1,5 @@
-import type { JSX } from 'preact';
-import { useEffect, useState } from 'preact/hooks';
+import type { ComponentChildren } from 'preact';
+import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   BALANCE,
   CLASSES,
@@ -9,45 +9,44 @@ import {
   bredPerSec,
   countermeasureName,
   formatDuration,
+  formatNumber,
   tideLevel,
   tideMult,
-  tideRising,
   type ActiveId,
   type EraId,
 } from '../core/index.ts';
-import { IconButton, Money, Num } from './common.tsx';
+import { Money, Num, SCIENTIST, Thumb } from './common.tsx';
 import { COPY, NEWS, eraName } from './copy.ts';
-import {
-  IconBolt,
-  IconBomb,
-  IconCrown,
-  IconFlask,
-  IconGear,
-  IconHeart,
-  IconMute,
-  IconSound,
-  IconTrophy,
-  IconWave,
-} from './icons.tsx';
-import { app, focusEra, frame, modal } from './store.ts';
+import { app, focusEra, frame, modal, viewInsets } from './store.ts';
 
 export function Counter() {
   frame.value;
   const g = app.game;
   return (
     <div class="counter">
-      <div class="counter-money">
-        <Money value={g.run.money} />
-      </div>
-      <div class="counter-income">
-        +<Money value={g.income()} />
-        <span class="unit">{COPY.perSecond}</span>
+      <span class="coin" aria-hidden="true" />
+      <div class="counter-text">
+        <div class="counter-money num">
+          <Num value={g.run.money} />
+        </div>
+        <div class="counter-income num">
+          +<Money value={g.income()} />
+          {COPY.perSecond}
+        </div>
       </div>
     </div>
   );
 }
 
-export function EraBar() {
+/** A landmark from each era's island. */
+const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
+  1: { model: 'campfire' },
+  2: { model: 'temple' },
+  3: { model: 'lighthouse', crop: 0.7 },
+  4: { model: 'office-tower', crop: 0.55 },
+};
+
+export function EraTokens() {
   frame.value;
   const era = app.game.run.era;
   if (era < 2) return null;
@@ -55,33 +54,75 @@ export function EraBar() {
   return (
     <nav class="eras" aria-label="时代">
       {eras.map((e) => (
-        <button type="button" class="era-chip" data-era={e} aria-pressed={focusEra.value === e} onClick={() => app.flyTo(e)}>
-          {eraName(e)}
+        <button
+          type="button"
+          key={e}
+          class="era"
+          data-era={e}
+          aria-pressed={focusEra.value === e}
+          aria-label={eraName(e)}
+          title={eraName(e)}
+          onClick={() => app.flyTo(e)}
+        >
+          <Thumb {...ERA_MODEL[e]} />
         </button>
       ))}
     </nav>
   );
 }
 
-export function Actions() {
+/** One menu for everything that isn't the game itself. */
+export function Menu() {
   frame.value;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
   const muted = app.settings.value.muted;
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    document.addEventListener('pointerdown', away);
+    window.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', away);
+      window.removeEventListener('keydown', esc);
+    };
+  }, [open]);
+  const go = (m: 'leaderboard' | 'settings') => {
+    setOpen(false);
+    modal.value = m;
+  };
   return (
-    <div class="actions">
-      <IconButton label={COPY.leaderboard.title} onClick={() => (modal.value = 'leaderboard')}>
-        <IconTrophy />
-      </IconButton>
-      <IconButton label={COPY.settings.sound} aria-pressed={!muted} onClick={() => app.updateSettings({ muted: !muted })}>
-        {muted ? <IconMute /> : <IconSound />}
-      </IconButton>
-      <IconButton label={COPY.settings.title} onClick={() => (modal.value = 'settings')}>
-        <IconGear />
-      </IconButton>
+    <div class="menu" ref={ref}>
+      <button type="button" class="menu-btn" aria-label="菜单" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <i />
+        <i />
+        <i />
+      </button>
+      {open && (
+        <div class="menu-pop" role="menu">
+          <button type="button" role="menuitem" onClick={() => go('leaderboard')}>
+            {COPY.leaderboard.title}
+          </button>
+          <button
+            type="button"
+            role="menuitemcheckbox"
+            aria-checked={!muted}
+            onClick={() => app.updateSettings({ muted: !muted })}
+          >
+            {COPY.settings.sound}
+            <span class="switch" data-on={!muted || undefined} aria-hidden="true" />
+          </button>
+          <button type="button" role="menuitem" onClick={() => go('settings')}>
+            {COPY.settings.title}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-/** The tug of war: your bill against the humans' research, with the countermeasure marks. */
+/** The tug of war: your bill against the humans' research, plus the species they are taming. */
 export function RunBar() {
   frame.value;
   const g = app.game;
@@ -92,112 +133,146 @@ export function RunBar() {
   const taming = TAMEABLE.filter((id) => (run.taming[id] ?? 0) > 0.01 && run.defected[id] === undefined);
   return (
     <div class="runbar">
-      <div class="meter" data-kind="bill">
-        <span class="meter-label">{COPY.run.bill}</span>
-        <span class="meter-track">
-          <i style={{ transform: `scaleX(${Math.max(0.005, bill)})` }} />
-        </span>
-        <span class="meter-value num">{Math.floor(bill * 100)}%</span>
+      <div class="bars">
+        <div class="bar" data-kind="bill" role="meter" aria-label={COPY.run.bill} aria-valuenow={Math.floor(bill * 100)}>
+          <span class="bar-cap coin" aria-hidden="true" />
+          <span class="bar-track">
+            <i style={{ transform: `scaleX(${Math.max(0.01, bill)})` }} />
+          </span>
+          <span class="bar-val num">{Math.floor(bill * 100)}%</span>
+        </div>
+        <div
+          class="bar"
+          data-kind="research"
+          data-level={level}
+          role="meter"
+          aria-label={COPY.run.research}
+          aria-valuenow={Math.floor(research * 100)}
+        >
+          <span class="bar-cap">
+            <Thumb {...SCIENTIST} />
+          </span>
+          <span class="bar-track">
+            <i style={{ transform: `scaleX(${Math.max(0.01, research)})` }} />
+            {BALANCE.research.thresholds.map((t, i) => {
+              const cm = run.countermeasures[i];
+              return (
+                <b
+                  key={t}
+                  data-cls={cm?.cls}
+                  title={cm ? `${countermeasureName(cm.cls, cm.era)} · ${CLASSES[cm.cls].name}` : undefined}
+                  style={{ left: `${t * 100}%` }}
+                />
+              );
+            })}
+          </span>
+          <span class="bar-val num">{Math.floor(research * 100)}%</span>
+        </div>
       </div>
-      <div class="meter" data-kind="research" data-level={level}>
-        <span class="meter-label">
-          <IconFlask class="inline-icon" />
-          {COPY.run.research}
-        </span>
-        <span class="meter-track">
-          <i style={{ transform: `scaleX(${Math.max(0.005, research)})` }} />
-          {BALANCE.research.thresholds.map((t, i) => (
-            <b key={t} class={i < run.countermeasures.length ? 'hit' : ''} style={{ left: `${t * 100}%` }} />
-          ))}
-        </span>
-        <span class="meter-value num">{Math.floor(research * 100)}%</span>
-      </div>
-      {(run.countermeasures.length > 0 || taming.length > 0) && (
-        <div class="chips">
-          {run.countermeasures.map((cm, i) => (
-            <span key={i} class="chip" data-cls={cm.cls}>
-              {countermeasureName(cm.cls, cm.era)} · {CLASSES[cm.cls].name}
-            </span>
-          ))}
-          {taming.map((id) => (
-            <span key={id} class="chip warn" data-hot={(run.taming[id] ?? 0) > 0.7 || undefined}>
-              {CREATURE_BY_ID[id].name} {COPY.run.taming} <span class="num">{Math.floor((run.taming[id] ?? 0) * 100)}%</span>
-            </span>
-          ))}
+      {taming.length > 0 && (
+        <div class="tames">
+          {taming.map((id) => {
+            const v = run.taming[id] ?? 0;
+            const label = `${CREATURE_BY_ID[id].name} ${COPY.run.taming} ${Math.floor(v * 100)}%`;
+            return (
+              <span key={id} class="tame" data-hot={v > 0.7 || undefined} style={{ '--p': v }} title={label} aria-label={label}>
+                <Thumb model={CREATURE_BY_ID[id].model} fill={0.82} />
+              </span>
+            );
+          })}
         </div>
       )}
     </div>
   );
 }
 
-export function Ticker() {
-  const best = app.game.run.era;
-  const [i, setI] = useState(() => Math.floor(Math.random() * 100));
-  useEffect(() => {
-    const t = setInterval(() => setI((n) => n + 1), 9000);
-    return () => clearInterval(t);
-  }, []);
-  const pool = ([1, 2, 3, 4] as EraId[]).filter((e) => e <= best).flatMap((e) => NEWS[e]);
-  const fresh = NEWS[best];
-  const line = i % 3 === 0 ? pool[i % pool.length] : fresh[i % fresh.length];
+// ── Skills ──────────────────────────────────────────────────────
+
+const ACTIVE_LOOK: Record<Exclude<ActiveId, 'surge'>, { model: string; crop?: number }> = {
+  rescue: { model: 'wolf' },
+  rampage: { model: 'mammoth' },
+  sabotage: SCIENTIST,
+};
+
+interface SkillProps {
+  kind: string;
+  label: string;
+  look: { model: string; crop?: number };
+  /** Seconds until ready, and the full cooldown, for the sweep. */
+  cd?: number;
+  cdTotal?: number;
+  /** Seconds left on an effect that is running right now. */
+  live?: number;
+  disabled?: boolean;
+  badge?: ComponentChildren;
+  tag?: ComponentChildren;
+  face?: ComponentChildren;
+  onClick: () => void;
+}
+
+function Skill({ kind, label, look, cd = 0, cdTotal = 1, live = 0, disabled, badge, tag, face, onClick }: SkillProps) {
+  const cooling = cd > 0 && live <= 0;
   return (
-    <div class="ticker" aria-live="polite">
-      <span key={i} class="ticker-line">
-        {line}
+    <button
+      type="button"
+      class="skill"
+      data-skill={kind}
+      data-live={live > 0 || undefined}
+      data-ready={(!disabled && !cooling && live <= 0) || undefined}
+      disabled={disabled || cooling || live > 0}
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+    >
+      <span class="skill-face">
+        {face}
+        <Thumb {...look} fill={0.8} />
       </span>
-    </div>
+      {cooling && (
+        <span class="skill-cd" style={{ '--p': Math.min(1, cd / cdTotal) }}>
+          <b class="num">{formatDuration(cd)}</b>
+        </span>
+      )}
+      {live > 0 && (
+        <span class="skill-cd live">
+          <b class="num">{Math.ceil(live)}</b>
+        </span>
+      )}
+      {badge !== undefined && <span class="skill-badge num">{badge}</span>}
+      {tag !== undefined && <span class="skill-tag num">{tag}</span>}
+    </button>
   );
 }
 
-const ACTIVE_ICONS: Record<ActiveId, (p: JSX.SVGAttributes<SVGSVGElement>) => JSX.Element> = {
-  surge: IconWave,
-  rescue: IconHeart,
-  rampage: IconBolt,
-  sabotage: IconBomb,
-};
-
-/** Era mechanics and active skills along the bottom-left. */
-export function Dock() {
+/** Era mechanics and active skills: round buttons, one row, never stacked on each other. */
+export function SkillDock() {
   frame.value;
   const g = app.game;
   if (!g.running) return null;
-  const actives = (['rescue', 'rampage', 'sabotage'] as ActiveId[]).filter((id) => g.mods.actives[id]);
+  const actives = (['rescue', 'rampage', 'sabotage'] as const).filter((id) => g.mods.actives[id]);
   if (!g.mods.breeding && !g.mods.tide && !actives.length) return null;
+  const fire = (id: ActiveId) => (g.activate(id) ? app.sfx.surge() : app.sfx.deny());
   return (
-    <div class="mechanics">
-      {g.mods.breeding && <BreedingCard />}
-      {g.mods.tide && <TideCard />}
+    <div class="skills">
+      {g.mods.breeding && <Nest />}
+      {g.mods.tide && <Surge />}
       {actives.map((id) => (
-        <ActiveButton key={id} id={id} />
+        <Skill
+          key={id}
+          kind={id}
+          label={COPY.actives[id]}
+          look={ACTIVE_LOOK[id]}
+          cd={g.cooldown(id)}
+          cdTotal={BALANCE.actives[id].cooldown}
+          live={id === 'rampage' ? g.run.rampageLeft : 0}
+          onClick={() => fire(id)}
+        />
       ))}
     </div>
   );
 }
 
-function ActiveButton({ id }: { id: ActiveId }) {
-  frame.value;
-  const g = app.game;
-  const cd = g.cooldown(id);
-  const Icon = ACTIVE_ICONS[id];
-  return (
-    <button
-      type="button"
-      class="active-btn"
-      data-active={id}
-      disabled={cd > 0}
-      onClick={() => (g.activate(id) ? app.sfx.surge() : app.sfx.deny())}
-      title={COPY.actives[id]}
-    >
-      <span class="active-icon">
-        <Icon />
-      </span>
-      <span class="btn-label">{COPY.actives[id]}</span>
-      {cd > 0 && <span class="btn-sub num">{formatDuration(cd)}</span>}
-    </button>
-  );
-}
-
-function BreedingCard() {
+function Nest() {
   frame.value;
   const g = app.game;
   const run = g.run;
@@ -205,52 +280,73 @@ function BreedingCard() {
   let bred = 0;
   for (const c of CREATURES) if (c.cls === 'swarm') bred += bredPerSec(run, g.mods, c.id);
   return (
-    <div class="mech" data-cls="swarm">
-      <span class="mech-icon">
-        <IconCrown />
-      </span>
-      <div class="mech-text">
-        <div class="mech-name">
-          {COPY.breeding.name} <span class="num">×{run.nests}</span>
-        </div>
-        <div class="mech-meta">
-          {COPY.breeding.bred} +<Num value={bred} />
-          {COPY.perSecond}
-        </div>
-      </div>
-      <button type="button" class="mech-btn" disabled={cost.gt(run.money)} onClick={() => (g.buyNest() ? app.sfx.buy() : app.sfx.deny())}>
-        <span class="btn-label">{COPY.breeding.build}</span>
-        <Money value={cost} class="btn-sub" />
-      </button>
-    </div>
+    <Skill
+      kind="nest"
+      label={`${COPY.breeding.name} ×${run.nests} · ${COPY.breeding.bred} +${formatNumber(bred)}${COPY.perSecond}`}
+      look={{ model: 'rat' }}
+      disabled={cost.gt(run.money)}
+      badge={`×${run.nests}`}
+      tag={<Money value={cost} />}
+      onClick={() => (g.buyNest() ? app.sfx.buy() : app.sfx.deny())}
+    />
   );
 }
 
-function TideCard() {
+function Surge() {
   frame.value;
   const g = app.game;
   const t = g.run.tide;
   const surging = t.surgeLeft > 0;
-  const cd = g.cooldown('surge');
   const level = surging ? 1 : tideLevel(t.clock);
   return (
-    <div class="mech" data-cls="marine" data-surge={surging || undefined}>
-      <span class="tide-meter" aria-hidden="true">
-        <i style={{ transform: `scaleY(${0.08 + level * 0.92})` }} />
-      </span>
-      <div class="mech-text">
-        <div class="mech-name">
-          {COPY.tide.name} <span class="num">×{tideMult(t, g.mods).toFixed(1)}</span>
-        </div>
-        <div class="mech-meta">
-          <IconWave class="inline-icon" />
-          {surging ? COPY.tide.surging : tideRising(t.clock) ? COPY.tide.rising : COPY.tide.falling}
-        </div>
-      </div>
-      <button type="button" class="mech-btn" disabled={cd > 0} onClick={() => (g.activate('surge') ? app.sfx.surge() : app.sfx.deny())}>
-        <span class="btn-label">{surging ? COPY.tide.surging : COPY.actives.surge}</span>
-        {(surging || cd > 0) && <span class="btn-sub num">{formatDuration(surging ? t.surgeLeft : cd)}</span>}
-      </button>
+    <Skill
+      kind="surge"
+      label={`${COPY.actives.surge} · ${COPY.tide.name} ×${tideMult(t, g.mods).toFixed(1)}`}
+      look={{ model: 'shark' }}
+      cd={g.cooldown('surge')}
+      cdTotal={g.mods.surgeCooldown}
+      live={t.surgeLeft}
+      badge={`×${tideMult(t, g.mods).toFixed(1)}`}
+      face={<i class="water" style={{ transform: `scaleY(${0.12 + level * 0.88})` }} />}
+      onClick={() => (g.activate('surge') ? app.sfx.surge() : app.sfx.deny())}
+    />
+  );
+}
+
+// ── Ambient ─────────────────────────────────────────────────────
+
+/** The middle of the part of the screen the city gets. */
+function sceneCenter(): { x: number; y: number } {
+  const ins = viewInsets.value;
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  return { x: ins.left + (w - ins.left - ins.right) / 2, y: ins.top + Math.max(1, h - ins.top - ins.bottom) / 2 };
+}
+
+/** Now and then a headline pops up over the city, then goes away. */
+export function NewsBubble() {
+  const [line, setLine] = useState<{ id: number; text: string } | null>(null);
+  useEffect(() => {
+    let n = Math.floor(Math.random() * 100);
+    let timer: ReturnType<typeof setTimeout>;
+    const show = () => {
+      const era = app.game.run.era;
+      const seen = ([1, 2, 3, 4] as EraId[]).filter((e) => e <= era).flatMap((e) => NEWS[e]);
+      const pool = n % 3 === 0 ? seen : NEWS[era];
+      n++;
+      if (modal.value === null && app.game.running) setLine({ id: n, text: pool[n % pool.length]! });
+      timer = setTimeout(() => {
+        setLine(null);
+        timer = setTimeout(show, 24000 + Math.random() * 20000);
+      }, 6500);
+    };
+    timer = setTimeout(show, 14000);
+    return () => clearTimeout(timer);
+  }, []);
+  if (!line) return null;
+  return (
+    <div class="bubble" key={line.id} aria-live="polite" style={{ left: `${sceneCenter().x}px` }}>
+      {line.text}
     </div>
   );
 }
@@ -260,8 +356,9 @@ export function TapHint() {
   frame.value;
   const run = app.game.run;
   if (run.clicks > 0 || run.creatures.ant.bought > 0 || run.money.gt(15) || app.game.meta.runs > 0) return null;
+  const c = sceneCenter();
   return (
-    <div class="tap-hint" aria-hidden="true">
+    <div class="tap-hint" aria-hidden="true" style={{ left: `${c.x}px`, top: `${c.y}px` }}>
       <span />
       <span />
     </div>

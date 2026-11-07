@@ -4,43 +4,43 @@ import type { Difficulty, Effect, MetaUpgradeDef, RouteId } from '../types.ts';
 export const META_UPGRADES: readonly MetaUpgradeDef[] = [
   {
     id: 'route_plague',
-    name: '路线：瘟疫',
+    name: '瘟疫',
     kind: 'route',
     levels: [{ cost: 30, effects: [{ type: 'unlockRoute', route: 'plague' }] }],
   },
   {
     id: 'fork_assassin',
-    name: '分支：精神污染',
+    name: '精神污染',
     kind: 'fork',
     levels: [{ cost: 15, effects: [{ type: 'unlockFork', group: 'assassin' }] }],
   },
   {
     id: 'fork_tank',
-    name: '分支：践踏',
+    name: '践踏',
     kind: 'fork',
     levels: [{ cost: 15, effects: [{ type: 'unlockFork', group: 'tank' }] }],
   },
   {
     id: 'perk_growth',
-    name: '天性：多产',
+    name: '多产',
     kind: 'perk',
     levels: [10, 25, 50].map((cost) => ({ cost, effects: [{ type: 'globalMult' as const, x: 1.15 }] })),
   },
   {
     id: 'perk_quiet',
-    name: '天性：低调',
+    name: '低调',
     kind: 'perk',
     levels: [10, 25, 50].map((cost) => ({ cost, effects: [{ type: 'researchMult' as const, x: 0.94 }] })),
   },
   {
     id: 'perk_wild',
-    name: '天性：野性',
+    name: '野性',
     kind: 'perk',
     levels: [15, 35].map((cost) => ({ cost, effects: [{ type: 'domesticationMult' as const, x: 0.85 }] })),
   },
   {
     id: 'perk_savings',
-    name: '天性：囤粮',
+    name: '囤粮',
     kind: 'perk',
     levels: [
       { cost: 8, effects: [{ type: 'startMoney', amount: 500 }] },

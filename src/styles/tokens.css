@@ -7,54 +7,52 @@
  * Bright scales (lime, amber, sky) take dark text on step 9; the rest take white.
  */
 :root {
-  /* Surfaces */
+  /*
+   * Cartoon look: solid paper panels with a warm ink outline, and buttons with a visible
+   * thickness (a darker band along the bottom) that squashes when pressed.
+   */
+  --ink: var(--gold-12);
+  --ink-soft: var(--gold-11);
+  --paper: var(--gold-2);
+  --paper-sunken: var(--gold-4);
+  --paper-line: var(--gold-6);
+  --paper-line-strong: var(--gold-7);
+  --card: var(--olive-1);
+
   --app-bg-top: var(--sky-4);
   --app-bg-bottom: var(--olive-2);
-  --surface: var(--white-a11);
-  --surface-solid: var(--olive-1);
-  --surface-sunken: var(--olive-a2);
-  --surface-hover: var(--olive-a3);
-  --surface-pressed: var(--olive-a4);
-  --border-subtle: var(--olive-a5);
-  --border: var(--olive-a6);
-  --border-strong: var(--olive-a7);
-  --focus: var(--grass-8);
+  --focus: var(--sky-8);
 
   /* Text */
-  --text: var(--olive-12);
-  --text-muted: var(--olive-11);
+  --text: var(--ink);
+  --text-muted: var(--gold-11);
   --text-on-solid: white;
-  --text-inverse: var(--olive-1);
 
   /* Accents */
   --brand: var(--grass-9);
-  --brand-hover: var(--grass-10);
+  --brand-side: var(--grass-11);
   --brand-text: var(--grass-11);
   --money: var(--amber-11);
   --danger: var(--tomato-9);
-  --danger-hover: var(--tomato-10);
-  --danger-soft: var(--tomato-3);
+  --danger-side: var(--tomato-11);
   --danger-text: var(--tomato-11);
 
-  /* Shadows (Radix black alpha) */
-  --shadow-1: 0 1px 2px var(--black-a1), 0 1px 1px var(--black-a1);
-  --shadow-2: 0 2px 6px var(--black-a1), 0 10px 28px var(--black-a2);
-  --shadow-3: 0 12px 40px var(--black-a3);
+  /* Outlines and hard shadows */
+  --line: 2px;
+  --line-bold: 3px;
+  --lift: 4px;
+  --drop: 0 4px 0 var(--black-a4);
+  --drop-ink: 0 2px 0 var(--ink);
 
-  /*
-   * Concentric radii: an inner radius is the outer radius minus the padding between them,
-   * so nested corners share one centre.
-   */
+  /* Concentric radii: inner = outer − the padding between them. */
   --r-panel: 22px;
   --p-panel: 8px;
   --r-card: calc(var(--r-panel) - var(--p-panel)); /* 14 */
   --p-card: 6px;
   --r-control: calc(var(--r-card) - var(--p-card)); /* 8 */
   --r-modal: 26px;
-  --p-modal: 10px;
-  --r-modal-card: calc(var(--r-modal) - var(--p-modal)); /* 16 */
-  --seg-pad: 3px;
-  --r-seg: calc(var(--r-card) - var(--seg-pad)); /* 11 */
+  --p-modal: 12px;
+  --r-modal-card: calc(var(--r-modal) - var(--p-modal)); /* 14 */
 
   /* Type */
   --font-ui: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
@@ -62,8 +60,7 @@
   --font-num: 'Fredoka Variable', 'Fredoka', var(--font-ui);
 
   --gap: 8px;
-  --panel-w: 392px;
-  --sheet-h: 54dvh;
+  --panel-w: 400px;
 }
 
 /* Era accents (sky, gold, bronze, iris) and class accents (lime, amber, orange, brown, cyan),

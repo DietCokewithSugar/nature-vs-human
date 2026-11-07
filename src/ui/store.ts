@@ -1,9 +1,17 @@
 import { signal, type Signal } from '@preact/signals';
-import type { Difficulty, EraId, Game, RouteId } from '../core/index.ts';
+import type { CreatureId, Difficulty, EraId, Game, RouteId } from '../core/index.ts';
 import type { Settings } from '../data/storage.ts';
 
 export type Tab = 'creatures' | 'skills' | 'meta';
-export type ModalId = 'leaderboard' | 'settings' | 'setup' | 'result' | null;
+export type ModalId = 'leaderboard' | 'settings' | 'setup' | 'result' | 'creature' | null;
+/** How far the shop is pulled out. On wide screens anything but 'closed' means open. */
+export type Sheet = 'closed' | 'half' | 'full';
+export interface Insets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
 
 export interface Toast {
   id: number;
@@ -27,6 +35,11 @@ export const toasts = signal<Toast[]>([]);
 export const floats = signal<FloatText[]>([]);
 export const focusEra = signal<EraId>(1);
 export const flash = signal(0);
+export const sheet = signal<Sheet>('half');
+/** The creature whose card is open. */
+export const detail = signal<CreatureId | null>(null);
+/** The part of the screen the UI leaves for the city. */
+export const viewInsets = signal<Insets>({ top: 0, right: 0, bottom: 0, left: 0 });
 
 let nextId = 1;
 
