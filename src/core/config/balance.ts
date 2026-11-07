@@ -69,6 +69,30 @@ export const BALANCE = {
     sabotage: { cooldown: 240, amount: 0.03 },
   },
 
+  /** Humans march out to wreck the lair of your best earner. */
+  raids: {
+    /** Raid meter gained per unit of research gained: raids speed up with research. */
+    perResearch: 30,
+    /** Seconds to reach a lair at distance 1 (see ZONES). */
+    march: 25,
+  },
+
+  lairs: {
+    /** Output a species loses while its lair is wrecked. */
+    loss: 0.5,
+    /** Seconds a wrecked lair takes to grow back. */
+    regrow: 90,
+  },
+
+  disasters: {
+    /** Disasters start in this era; the ice age stays quiet. */
+    fromEra: 2,
+    /** Seconds from opening that era to the first warning. */
+    first: 150,
+    /** Seconds between one disaster ending and the next warning. */
+    gap: [300, 480],
+  },
+
   difficulty: {
     normal: { bill: 1e21, research: 1, hunters: 1, points: 1 },
     hard: { bill: 1e23, research: 1.25, hunters: 1.25, points: 1.6 },

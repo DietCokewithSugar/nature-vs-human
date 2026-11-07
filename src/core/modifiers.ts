@@ -5,6 +5,7 @@ import { DOMESTIC_EFFECTS } from './config/humans.ts';
 import { META_BY_ID, ROUTES } from './config/meta.ts';
 import { SKILL_BY_ID } from './config/skills.ts';
 import { UPGRADE_BY_ID } from './config/upgrades.ts';
+import { disasterBoost } from './mechanics/disasters.ts';
 import type { GameState, MetaState, RunState } from './state.ts';
 import { CLASS_IDS, type ActiveId, type CreatureId, type Effect, type RouteId, type UnitClass } from './types.ts';
 
@@ -31,6 +32,10 @@ export interface Mods {
   routesUnlocked: Record<RouteId, boolean>;
   /** Hunters move faster once they have dogs. */
   dogs: boolean;
+  /** Time multiplier for wrecked lairs growing back. */
+  lairRegrowMult: number;
+  /** Multiplier on the output a wrecked lair costs. */
+  lairLossMult: number;
 }
 
 function base(): Mods {
@@ -55,6 +60,8 @@ function base(): Mods {
     forksUnlocked: {},
     routesUnlocked: { beasts: true, plague: false },
     dogs: false,
+    lairRegrowMult: 1,
+    lairLossMult: 1,
   };
 }
 
@@ -104,6 +111,12 @@ function apply(m: Mods, e: Effect): void {
       break;
     case 'unlockActive':
       m.actives[e.id] = true;
+      break;
+    case 'lairRegrowMult':
+      m.lairRegrowMult *= e.x;
+      break;
+    case 'lairLossMult':
+      m.lairLossMult *= e.x;
       break;
     case 'convert':
     case 'unlockEra':
@@ -172,5 +185,11 @@ export function computeMods(state: GameState): Mods {
   for (const cm of run.countermeasures) {
     m.classMult[cm.cls] *= 1 - BALANCE.research.countermeasure * (1 - m.resist[cm.cls]);
   }
+  // Wrecked lairs: the species keeps working, just less of it.
+  const keep = Math.max(0, 1 - BALANCE.lairs.loss * m.lairLossMult);
+  for (const id of CREATURE_IDS) if ((run.lairs[id] ?? 0) > 0) m.creatureMult[id] *= keep;
+  // A raging disaster lifts the class that rides it.
+  const boost = disasterBoost(run);
+  if (boost) m.classMult[boost.cls] *= boost.x;
   return m;
 }

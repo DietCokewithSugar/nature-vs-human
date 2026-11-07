@@ -36,6 +36,13 @@ export const DIFFICULTIES: readonly Difficulty[] = ['normal', 'hard', 'brutal'];
 
 export type RouteId = 'beasts' | 'plague';
 
+/** Regions of the nature side. Each lair sits in one; each disaster strikes one. */
+export type ZoneId = 'forest' | 'plains' | 'volcano' | 'coast';
+export const ZONE_IDS: readonly ZoneId[] = ['forest', 'plains', 'volcano', 'coast'];
+
+export type DisasterId = 'tsunami' | 'tornado' | 'volcano';
+export const DISASTER_IDS: readonly DisasterId[] = ['tsunami', 'tornado', 'volcano'];
+
 export type Effect =
   | { type: 'creatureMult'; creature: CreatureId; x: number }
   | { type: 'classMult'; cls: UnitClass; x: number }
@@ -53,7 +60,11 @@ export type Effect =
   | { type: 'surgeCooldownMult'; x: number }
   | { type: 'unlockActive'; id: ActiveId }
   | { type: 'convert'; from: CreatureId; to: CreatureId }
-  | { type: 'unlockEra'; era: EraId };
+  | { type: 'unlockEra'; era: EraId }
+  /** Wrecked lairs grow back this much faster (time multiplier). */
+  | { type: 'lairRegrowMult'; x: number }
+  /** Output lost while a lair is wrecked, as a multiplier on the base loss. */
+  | { type: 'lairLossMult'; x: number };
 
 export type Requirement =
   | { type: 'owned'; creature: CreatureId; n: number }

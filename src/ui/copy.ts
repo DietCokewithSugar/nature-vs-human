@@ -148,6 +148,8 @@ export const COPY = {
     surgeCooldownMult: (pct: number) => `大潮冷却 −${pct}%`,
     unlockActive: (name: string) => `主动技能：${name}`,
     convert: (from: string, to: string) => `${from}全部变成${to}`,
+    lairRegrowMult: (x: number) => `老窝重建 ×${x} 速`,
+    lairLossMult: (pct: number) => `老窝被端损失 −${pct}%`,
     startMoney: (money: string) => `开局 ${money}`,
     unlockFork: '解锁分支 B',
     unlockRoute: (name: string) => `解锁路线：${name}`,

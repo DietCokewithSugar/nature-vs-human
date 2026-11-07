@@ -9,18 +9,22 @@ import {
   CLASSES,
   CREATURES,
   DIFFICULTY_NAMES,
+  DISASTERS,
   ERAS,
+  LAIRS,
+  ZONES,
   createState,
   formatNumber,
   type Difficulty,
 } from '../src/core/index.ts';
-import { PROFILES, simulate, type RunLog } from './simulate.ts';
+import { PROFILES, SEED, simulate, type RunLog } from './simulate.ts';
 
 const LABEL: Record<string, string> = {
   engaged: '投入型：常驻页面，最优购买，用主动技能',
   casual: '休闲型：每 45 秒看一次，用主动技能',
   idle: '挂机型：每 3 分钟看一次，不用主动技能，不点防守技能',
 };
+const REPEL: Record<string, string> = { engaged: '来了就赶', casual: '看页面时赶', idle: '看页面时赶' };
 const COLOR: Record<string, string> = { engaged: grass.grass9, casual: cyan.cyan9, idle: amber.amber10 };
 const CLASS_CN: Record<string, string> = Object.fromEntries(Object.values(CLASSES).map((c) => [c.id, c.name]));
 const PREY_CN: Record<string, string> = Object.fromEntries(CREATURES.map((c) => [c.id, c.name]));
@@ -71,7 +75,8 @@ function chart(runs: RunLog[]): string {
 function row(r: RunLog): string {
   const cms = r.countermeasures.map((c) => `${CLASS_CN[c.cls]} ${min(c.t)}`).join('、') || '无';
   const def = r.defected.map((d) => `${PREY_CN[d.id]} ${min(d.t)}`).join('、') || '无';
-  return `| ${DIFFICULTY_NAMES[r.difficulty]} | ${r.profile} | ${r.won ? '胜' : '负'} ${min(r.time)} | ${min(r.eras[2] ?? null)} / ${min(r.eras[3] ?? null)} / ${min(r.eras[4] ?? null)} | ${Math.round(r.research * 100)}% | ${cms} | ${def} | ${r.points} |`;
+  const raids = `${r.raids.landed} / ${r.raids.landed + r.raids.repelled}`;
+  return `| ${DIFFICULTY_NAMES[r.difficulty]} | ${r.profile} | ${r.won ? '胜' : '负'} ${min(r.time)} | ${min(r.eras[2] ?? null)} / ${min(r.eras[3] ?? null)} / ${min(r.eras[4] ?? null)} | ${Math.round(r.research * 100)}% | ${cms} | ${def} | ${raids} | ${r.disasters.length} | ${r.points} |`;
 }
 
 function main() {
@@ -87,10 +92,11 @@ function main() {
   );
   writeFileSync(new URL('../docs/balance-chart.svg', import.meta.url), chart(plain.filter((r) => r.difficulty === 'normal')));
 
-  const head = '| 难度 | 玩家 | 结果 | 古代 / 工业 / 现代 | 研究 | 人类反制 | 跳反 | 局外点数 |\n|---|---|---|---|---|---|---|---|';
+  const head =
+    '| 难度 | 玩家 | 结果 | 古代 / 工业 / 现代 | 研究 | 人类反制 | 跳反 | 老窝被端 / 突袭 | 灾难 | 局外点数 |\n|---|---|---|---|---|---|---|---|---|---|';
   const creatureRows = CREATURES.map(
     (c) =>
-      `| ${ERAS[c.era].name} | ${c.name} | ${CLASS_CN[c.cls]} | $${formatNumber(c.baseCost)} | ${formatNumber(c.baseProd)}/秒 | ${c.tame ? '可驯化' : c.ancient ? '远古巨兽' : ''} |`,
+      `| ${ERAS[c.era].name} | ${c.name} | ${CLASS_CN[c.cls]} | ${LAIRS[c.id].name}（${ZONES[LAIRS[c.id].zone].name}） | $${formatNumber(c.baseCost)} | ${formatNumber(c.baseProd)}/秒 | ${c.tame ? '可驯化' : c.ancient ? '远古巨兽' : ''} |`,
   ).join('\n');
 
   const R = BALANCE.research;
@@ -102,7 +108,9 @@ function main() {
 
 目标：一局 40 到 90 分钟；普通难度认真玩能赢，放着不管会输；困难和残酷要靠局外成长。三种机器人用真实的逻辑核心打完整局：
 
-${Object.entries(LABEL).map(([k, v]) => `- **${k}**：${v}`).join('\n')}
+${Object.entries(LABEL).map(([k, v]) => `- **${k}**：${v}；突袭${REPEL[k]}`).join('\n')}
+
+灾难是随机的，报告里每局都用同一个种子（${SEED}），方便前后对比。
 
 ### 没有局外成长
 
@@ -127,12 +135,30 @@ ${veteran.map(row).join('\n')}
 | 兵种抗性 | ${Object.values(CLASSES).map((c) => `${c.name} ${c.resist}`).join('，')} |
 | 驯化速度 | 满曝光（拥有 ${BALANCE.domestication.fullExposure} 只）时 ${BALANCE.domestication.base}/秒 × 时代 × 难度，有狗再 ×${1 + BALANCE.domestication.dogBoost} |
 | 远古巨兽 | 每落后一个时代产出 ×${BALANCE.obsolete} |
+| 端老窝 | 突袭表涨速 = 研究速度 × ${BALANCE.raids.perResearch}；满了就派人去端产出最高的完好老窝，行军 ${BALANCE.raids.march} 秒 × 距离（${Object.values(ZONES).map((z) => `${z.name} ${z.distance}`).join('，')}） |
+| 老窝被端 | 该物种产出 −${BALANCE.lairs.loss * 100}%，${BALANCE.lairs.regrow} 秒后长回来 |
+| 灾难 | ${ERAS[BALANCE.disasters.fromEra as 2].name}起，首次在 ${BALANCE.disasters.first} 秒后预警，之后每 ${BALANCE.disasters.gap[0] / 60} 到 ${BALANCE.disasters.gap[1] / 60} 分钟一次 |
 | 账单 | 普通 $${formatNumber(BALANCE.difficulty.normal.bill)}，困难 $${formatNumber(BALANCE.difficulty.hard.bill)}，残酷 $${formatNumber(BALANCE.difficulty.brutal.bill)} |
+
+## 灾难
+
+| 灾难 | 灾区 | 预警 / 持续 | 获益 | 被端的老窝 | 人类研究倒退（冰河 / 古代 / 工业 / 现代） |
+|---|---|---|---|---|---|
+${Object.values(DISASTERS)
+  .map((d) => {
+    const victims = CREATURES.filter((c) => LAIRS[c.id].zone === d.zone && c.cls !== d.boost.cls)
+      .map((c) => LAIRS[c.id].name)
+      .join('、');
+    const odds = d.wreck < 1 ? `（各 ${d.wreck * 100}% 概率）` : '';
+    const loss = d.exposure.map((e) => `${Math.round(d.research * e * 1000) / 10}%`).join(' / ');
+    return `| ${d.name} | ${ZONES[d.zone].name} | ${d.warn} 秒 / ${d.duration} 秒 | ${CLASS_CN[d.boost.cls]} ×${d.boost.x} | ${victims}${odds} | ${loss} |`;
+  })
+  .join('\n')}
 
 ## 生物配置表
 
-| 时代 | 生物 | 兵种 | 基础价 | 基础产出 | 备注 |
-|---|---|---|---|---|---|
+| 时代 | 生物 | 兵种 | 老窝 | 基础价 | 基础产出 | 备注 |
+|---|---|---|---|---|---|---|
 ${creatureRows}
 
 ## 怎么调
@@ -140,6 +166,7 @@ ${creatureRows}
 - 整体快慢：\`balance.ts\` 的 \`tiers\`（相邻生物的价格和产出倍率）。
 - 对抗强度：\`research.base\` 和各难度的 \`research\`。
 - 驯化压力：\`domestication.base\`。
+- 端老窝：\`raids\` 和 \`lairs\`；灾难：\`disasters\` 和 \`config/disasters.ts\`。
 - 难度梯度：\`difficulty\` 下的账单和倍率。
 `;
   writeFileSync(new URL('../docs/balance.md', import.meta.url), md);

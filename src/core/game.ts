@@ -17,13 +17,25 @@ import {
   runPoints,
   unitProd,
 } from './economy.ts';
+import { DISASTERS } from './config/disasters.ts';
 import { breedRate, nestCost } from './mechanics/breeding.ts';
+import { disasterResearchLoss, rollDisaster, rollGap, rollVictims } from './mechanics/disasters.ts';
+import { marchTime, raidRate, raidTarget, regrowTime } from './mechanics/raids.ts';
 import { TAMEABLE, billProgress, researchRate, tamingRate } from './mechanics/humans.ts';
 import { advanceTide, tideIntegral } from './mechanics/tide.ts';
 import { computeMods, metaMods, type Mods } from './modifiers.ts';
 import { availableUpgrades, difficultyUnlocked, isCreatureUnlocked, meets, metaFree, metaLevel, skillStatus } from './progression.ts';
 import { createRun, createState, type Countermeasure, type GameState, type RunResult } from './state.ts';
-import { CLASS_IDS, type ActiveId, type CreatureId, type Difficulty, type DomesticId, type EraId, type RouteId } from './types.ts';
+import {
+  CLASS_IDS,
+  type ActiveId,
+  type CreatureId,
+  type Difficulty,
+  type DisasterId,
+  type DomesticId,
+  type EraId,
+  type RouteId,
+} from './types.ts';
 
 export type CoreEvent =
   | { type: 'creatureBought'; id: CreatureId; count: number; total: number }
@@ -36,6 +48,13 @@ export type CoreEvent =
   | { type: 'click'; gain: Decimal }
   | { type: 'countermeasure'; cm: Countermeasure; name: string }
   | { type: 'defected'; id: CreatureId; count: number; domestic: DomesticId }
+  | { type: 'raidStarted'; target: CreatureId; march: number }
+  | { type: 'raidRepelled'; target: CreatureId }
+  | { type: 'raidLanded'; target: CreatureId }
+  | { type: 'lairRegrown'; id: CreatureId }
+  | { type: 'disasterWarning'; id: DisasterId; warn: number }
+  | { type: 'disasterStarted'; id: DisasterId; wrecked: CreatureId[]; research: number }
+  | { type: 'disasterEnded'; id: DisasterId }
   | { type: 'runEnded'; result: RunResult }
   | { type: 'runStarted' }
   | { type: 'metaBought'; id: string; level: number }
@@ -102,6 +121,12 @@ export class Game {
       const run = this.run;
       if (this.mods.tide && run.tide.surgeLeft > 0) h = Math.min(h, run.tide.surgeLeft);
       if (run.rampageLeft > 0) h = Math.min(h, run.rampageLeft);
+      // Step exactly onto every timer that changes output, so long ticks match short ones.
+      if (run.raid) h = Math.min(h, run.raid.left);
+      for (const left of Object.values(run.lairs)) if (left !== undefined && left > 0) h = Math.min(h, left);
+      if (run.disaster) h = Math.min(h, run.disaster.left);
+      else if (run.era >= BALANCE.disasters.fromEra) h = Math.min(h, run.nextDisaster);
+      h = Math.max(h, 1e-6);
       this.step(h);
       remaining -= h;
     }
@@ -139,7 +164,11 @@ export class Game {
 
     // The humans push back.
     this.stepTaming(h);
+    const meter = raidRate(run, this.mods) * h;
     run.research = Math.min(1, run.research + researchRate(run, this.mods) * h);
+    this.stepLairs(h);
+    this.stepRaid(h, meter);
+    this.stepDisaster(h);
     this.fireCountermeasures();
 
     if (run.earned.gte(BALANCE.difficulty[run.difficulty].bill)) this.endRun(true);
@@ -155,6 +184,81 @@ export class Game {
       run.taming[id] = Math.min(1, next);
       if (next >= 1) this.defect(id);
     }
+  }
+
+  private stepLairs(h: number): void {
+    const run = this.run;
+    let changed = false;
+    for (const [id, left] of Object.entries(run.lairs) as [CreatureId, number][]) {
+      const next = left - h;
+      if (next > 1e-9) {
+        run.lairs[id] = next;
+        continue;
+      }
+      delete run.lairs[id];
+      changed = true;
+      this.emit({ type: 'lairRegrown', id });
+    }
+    if (changed) this.refreshMods();
+  }
+
+  private wreckLair(id: CreatureId): void {
+    this.run.lairs[id] = Math.max(this.run.lairs[id] ?? 0, regrowTime(this.mods));
+  }
+
+  private stepRaid(h: number, meter: number): void {
+    const run = this.run;
+    const raid = run.raid;
+    if (raid) {
+      raid.left -= h;
+      if (raid.left > 1e-9) return;
+      run.raid = null;
+      this.wreckLair(raid.target);
+      this.refreshMods();
+      this.emit({ type: 'raidLanded', target: raid.target });
+      return;
+    }
+    run.raidMeter = Math.min(1, run.raidMeter + meter);
+    if (run.raidMeter < 1) return;
+    const target = raidTarget(run, this.mods);
+    if (!target) return;
+    const march = marchTime(target);
+    run.raidMeter = 0;
+    run.raid = { target, left: march, total: march };
+    this.emit({ type: 'raidStarted', target, march });
+  }
+
+  private stepDisaster(h: number): void {
+    const run = this.run;
+    const d = run.disaster;
+    if (!d) {
+      if (run.era < BALANCE.disasters.fromEra) return;
+      run.nextDisaster -= h;
+      if (run.nextDisaster > 1e-9) return;
+      const id = rollDisaster(run);
+      const warn = DISASTERS[id].warn;
+      run.disaster = { id, phase: 'warning', left: warn, wrecked: [] };
+      this.emit({ type: 'disasterWarning', id, warn });
+      return;
+    }
+    d.left -= h;
+    if (d.left > 1e-9) return;
+    if (d.phase === 'warning') {
+      d.phase = 'active';
+      d.left = DISASTERS[d.id].duration;
+      d.wrecked = rollVictims(run, d.id);
+      for (const id of d.wrecked) this.wreckLair(id);
+      const research = Math.min(run.research, disasterResearchLoss(run, d.id));
+      run.research -= research;
+      this.refreshMods();
+      this.emit({ type: 'disasterStarted', id: d.id, wrecked: d.wrecked, research });
+      return;
+    }
+    run.disaster = null;
+    run.lastDisaster = d.id;
+    run.nextDisaster = rollGap(run);
+    this.refreshMods();
+    this.emit({ type: 'disasterEnded', id: d.id });
   }
 
   private defect(id: CreatureId): void {
@@ -218,9 +322,9 @@ export class Game {
   }
 
   /** Abandon whatever is going on and start a fresh run. */
-  startRun(route: RouteId = 'beasts', difficulty: Difficulty = 'normal'): boolean {
+  startRun(route: RouteId = 'beasts', difficulty: Difficulty = 'normal', seed?: number): boolean {
     if (!this.canStart(route, difficulty)) return false;
-    const run = createRun(route, difficulty);
+    const run = createRun(route, difficulty, seed);
     run.money = D(metaMods(this.meta).startMoney);
     for (const id of ROUTES[route].freeSkills) run.skills[id] = true;
     this.state.run = run;
@@ -322,6 +426,16 @@ export class Game {
     }
     this.refreshMods();
     this.emit({ type: 'skillBought', id });
+    return true;
+  }
+
+  /** Drive off the party marching on a lair. */
+  repel(): boolean {
+    const run = this.run;
+    if (!this.running || !run.raid) return false;
+    const target = run.raid.target;
+    run.raid = null;
+    this.emit({ type: 'raidRepelled', target });
     return true;
   }
 
