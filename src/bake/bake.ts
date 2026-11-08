@@ -25,8 +25,7 @@ import {
   WebGLRenderer,
   type Object3D,
 } from 'three';
-import { findClip, instantiate } from '../scene/assets.ts';
-import { HumanRig } from '../scene/humanRig.ts';
+import { findClip, instantiate } from './models/assets.ts';
 import { C, rgbOf, snapToPalette } from '../pixel/palette.ts';
 import { allSpecs, type SpriteSpec } from '../pixel/specs.ts';
 import type { UnitId } from '../core/index.ts';
@@ -78,21 +77,6 @@ async function load(spec: SpriteSpec): Promise<{ root: Group; anims: Record<stri
   root.add(prep.object);
   const anims: Record<string, (() => void)[]> = {};
   const still = [() => {}];
-
-  if (spec.anim === 'rig') {
-    const rig = new HumanRig(prep.model);
-    // Bigger heads: at 17 px a true-to-life head is three pixels and the figure reads as a blob.
-    prep.model.traverse((o) => {
-      if (o.name === 'Head') o.scale.setScalar(1.6);
-    });
-    const set = (phase: number, speed: number) => () => {
-      (rig as unknown as { phase: number }).phase = phase;
-      rig.update(0, speed);
-    };
-    anims.move = [0, 1, 2, 3].map((i) => set((i * Math.PI) / 2, 1));
-    anims.rest = [set(0, 0)];
-    return { root, anims };
-  }
 
   const wings: Object3D[] = [];
   prep.object.traverse((o) => {

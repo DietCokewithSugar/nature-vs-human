@@ -18,25 +18,27 @@
     "assets": "node scripts/fetch-assets.mjs",
     "report": "node --experimental-strip-types --no-warnings scripts/report.ts",
     "models": "node scripts/build-models.mjs",
-    "sprites": "node scripts/bake-sprites.mjs"
+    "sprites": "node scripts/bake-sprites.mjs",
+    "font": "node scripts/subset-font.mjs",
+    "frames": "node scripts/ui-frames.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/fredoka": "5.2.10",
-    "@fontsource/zcool-kuaile": "5.2.8",
     "@preact/signals": "2.11.3",
-    "@radix-ui/colors": "3.0.0",
     "@supabase/supabase-js": "2.118.0",
     "break_infinity.js": "2.2.0",
     "pixi.js": "8.22.0",
-    "preact": "10.29.8",
-    "three": "0.186.1"
+    "preact": "10.29.8"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.12",
+    "@fontsource/fusion-pixel-12px-proportional-sc": "5.3.0",
     "@gltf-transform/cli": "4.4.2",
     "@preact/preset-vite": "2.10.6",
+    "@radix-ui/colors": "3.0.0",
     "@types/node": "22.19.1",
     "@types/three": "0.186.0",
+    "subset-font": "2.9.0",
+    "three": "0.186.1",
     "typescript": "6.0.3",
     "vite": "8.3.5",
     "vitest": "5.0.5"

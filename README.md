@@ -288,6 +288,8 @@ npm test             # 逻辑核心 + 排行榜 SQL 测试
 npm run sim          # 三种机器人各打一局，看胜负和用时
 npm run report       # 多个种子跑完整局，重新生成 docs/balance.md
 npm run sprites      # 把模型烘焙成像素精灵图集 public/sprites/（见下面"画面"）
+npm run frames       # 重新生成界面的像素边框和图标（src/styles/frames.css）
+npm run font         # 改了文案以后，重新裁剪像素字体（public/fonts/pixel-ui.woff2）
 npm run models       # 用 Blender 重新生成自制模型（见下面"素材"）
 npm run build        # 类型检查 + 打包到 dist/
 ```
@@ -301,8 +303,7 @@ npm run build        # 类型检查 + 打包到 dist/
 | 层 | 目录 | 内容 |
 |---|---|---|
 | 外壳 | `src/shell/` | 启动、20 Hz 循环、自动存档。以后加 Steam（Electron/Tauri）和手机（Capacitor）外壳，只换这一层 |
-| 表现层 | `src/pixel/`、`src/ui/`、`src/styles/` | 像素地图（PixiJS）和 Preact 界面，只读状态、发指令。`pixel/ground.ts` 逐像素画地面和领地，`decor.ts` 按领地摆树和花，`scene.ts` 画建筑、单位、泡泡、血条、昼夜和镜头，`fx.ts` 是粒子和灾难，`marks.ts` 是头顶图标 |
-| 旧 3D 表现层 | `src/scene/` | 原来的 three.js 地图，接口和像素版一样。设置里「画面 → 3D」或网址加 `?r=3d` 切换，只有这时才加载 three.js |
+| 表现层 | `src/pixel/`、`src/ui/`、`src/styles/` | 像素地图（PixiJS）和像素风的 Preact 界面，只读状态、发指令。`pixel/ground.ts` 逐像素画地面和领地，`decor.ts` 按领地摆树和花，`scene.ts` 画建筑、单位、泡泡、血条、昼夜和镜头，`fx.ts` 是粒子和灾难，`marks.ts` 是头顶图标 |
 | 逻辑核心 | `src/core/` | 纯 TypeScript，可以在 Node 里直接跑。`map/` 是固定地图和寻路，`sim/` 是模拟：领地、单位 AI 与战斗、作息、建筑生产、效果建筑、人类 AI、研究、驯化、灾难 |
 | 数据 | `src/core/config/`、`src/data/`、`supabase/` | 配置表、本地存档与迁移、排行榜 |
 
@@ -312,8 +313,8 @@ npm run build        # 类型检查 + 打包到 dist/
 - 地图在 `src/core/map/grid.ts`：上面那张字符图就是源码，改字符就改地图。
 - 模拟用固定步长（0.1 秒）和带种子的随机数，同一个种子打出来的局一模一样，测试和平衡报告都靠这一点。
 - 所有界面文案在 `src/ui/copy.ts`，方便统一审稿和以后翻译。
-- 界面颜色来自 [Radix Colors](https://www.radix-ui.com/colors)（只用浅色主题），语义变量在 `src/styles/tokens.css`。地图上的每个像素只用 Resurrect 64 调色板（`src/pixel/palette.ts`），旧 3D 场景的颜色在 `src/scene/palette.ts`。
-- 嵌套圆角按"外圆角 − 内边距 = 内圆角"计算，变量也在 `tokens.css`。
+- 地图和界面的每个像素都来自 Resurrect 64 调色板：地图用 `src/pixel/palette.ts`，界面的语义变量在 `src/styles/tokens.css`，界面里沿用的 Radix 颜色名在 `src/styles/palette.css` 里改指到这套调色板。
+- 界面皮肤在 `src/styles/pixel.css`（叠在 `ui.css` 上）；木框、纸面、按钮这些像素边框和小图标用 ASCII 画在 `scripts/ui-frames.mjs` 里，`npm run frames` 生成 `src/styles/frames.css`。
 
 ## 数值
 
@@ -340,7 +341,7 @@ npm run build        # 类型检查 + 打包到 dist/
 
 ## 画面
 
-地图是 16-bit 风格的俯视像素画：一格 16 像素，统一用 Resurrect 64 调色板、左上方光源、1 像素深色描边。完整规范在 [docs/art-style.md](docs/art-style.md)，新素材按它做就能和现有的对上。
+地图是 16-bit 风格的俯视像素画：一格 16 像素，统一用 Resurrect 64 调色板、左上方光源、1 像素深色描边。界面走《星露谷物语》《泰拉瑞亚》的路子：木框羊皮纸面板、浅色纸卡片、有厚度的像素按钮、直角缺角、硬阴影，文字全部用像素字体（缝合像素字体，12 / 18 / 24 / 36 像素）。手机上顶部只有一条木框状态栏，地图露出得更多。完整规范在 [docs/art-style.md](docs/art-style.md)，新素材和新界面按它做就能和现有的对上。
 
 - **动物、建筑、树和道具**：`npm run sprites` 用固定的正交相机把 3D 模型渲染成像素图（4 倍超采样 → 缩小 → 三档明暗 → 吸附调色板 → 去杂点 → 描边），打包成 `public/sprites/atlas.png` 和 `atlas.json`（PixiJS / TexturePacker 通用格式）。需要 Playwright 的 Chromium。
 - **人**：太小，3D 缩下来只是一团，所以按像素游戏的常规做法用代码画：同一个 Q 版身体模板，换各职业的衣服颜色、帽子和工具（`src/bake/people.ts`）。
@@ -353,13 +354,13 @@ npm run build        # 类型检查 + 打包到 dist/
 
 3D 模型来自 [Polyfork](https://polyfork.dev)，按 CC BY 4.0 授权使用，完整署名见 [CREDITS.md](CREDITS.md)，游戏内的"设置 → 制作人员"也能看到。
 
-免费素材里没有猛犸、剑齿虎、犀牛、老虎、野猪、蚊子这些，所以在 Polyfork 的动画模型上做了改装（`src/scene/kitbash.ts`）：用 Radix 配色重新上色，再把程序生成的象牙、獠牙、角、口器挂到头部骨骼上，跟着动画动。蜜蜂由胡蜂改色，出租车由轿车改色。人物模型没有自带动画，走路动作由 `src/scene/humanRig.ts` 驱动；不同职业的人用颜色区分。
+模型只在烘焙像素图时用到，不进游戏包。免费素材里没有猛犸、剑齿虎、犀牛、老虎、野猪、蚊子这些，所以在 Polyfork 的动画模型上做了改装（`src/bake/models/kitbash.ts`）：重新上色，再把程序生成的象牙、獠牙、角、口器挂到头部骨骼上，跟着动画动。蜜蜂由胡蜂改色，出租车由轿车改色。
 
-- 草帐篷、萨满帐篷、蜂巢、花海、蝙蝠洞、稻草人、大石坝、捕虫灯、狼嚎岩、荆棘丛、毒沼、藤墙、集结旗、蝴蝶和蝙蝠由 `src/scene/procedural.ts` 用代码生成。
+- 草帐篷、萨满帐篷、蜂巢、花海、蝙蝠洞、稻草人、大石坝、捕虫灯、狼嚎岩、荆棘丛、毒沼、藤墙、集结旗、蝴蝶和蝙蝠由 `src/bake/models/procedural.ts` 用代码生成。
 - `npm run assets`：按 `scripts/assets.manifest.json` 下载模型并用 meshopt 压缩，同时重新生成署名文件。
 - 老窝、火山、人类前哨站和地图上的小道具是项目自制的，由 `tools/blender/models.py` 用 Blender 的 Python 模块生成，风格对齐 Polyfork：单一材质、顶点色、平直着色。重新生成需要先安装 Blender：`pip install bpy==5.2.3`（Python 3.13），然后运行 `npm run models`。如果 bpy 装在别的 Python 里，用 `BLENDER_PYTHON=/path/to/python npm run models`。
-- 开发服务器上打开 `/lab.html?set=world`：自制模型的陈列页；`/lab.html`：生物模型陈列页（不会打进生产包）。
-- 界面里的生物和建筑图标直接取自像素图集（3D 画面下由 three.js 从模型渲染）；音效用 Web Audio 合成，没有音频文件。
+- 界面里的生物和建筑图标直接取自像素图集；音效用 Web Audio 合成，没有音频文件。
+- 字体：[缝合像素字体](https://github.com/TakWolf/fusion-pixel-font)（SIL OFL 1.1）。`npm run font` 把源码里出现过的字裁成约 30 KB 的子集；完整字体放在 `public/fonts/` 当后备，只有遇到子集里没有的字（比如玩家起的昵称）才会下载。
 - 调色板：[Resurrect 64](https://lospec.com/palette-list/resurrect-64)，作者 Kerrie Lake。
 
 ## 后续

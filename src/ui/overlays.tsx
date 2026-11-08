@@ -727,10 +727,9 @@ function SettingsModal() {
           </ul>
           <h3>{COPY.settings.creditsOther}</h3>
           <ul class="credit-list plain">
-            <li>ZCOOL KuaiLe · Fredoka — SIL OFL 1.1</li>
+            <li>缝合像素字体 Fusion Pixel Font — TakWolf · SIL OFL 1.1</li>
             <li>Resurrect 64 调色板 — Kerrie Lake（lospec.com）</li>
-            <li>Radix Colors — MIT</li>
-            <li>PixiJS · three.js · Preact · break_infinity.js · Supabase JS — MIT</li>
+            <li>PixiJS · Preact · break_infinity.js · Supabase JS — MIT</li>
           </ul>
         </div>
       </Modal>
@@ -762,21 +761,6 @@ function SettingsModal() {
               { value: 'low', label: COPY.settings.qualityLow },
             ]}
             onChange={(v) => app.updateSettings({ quality: v })}
-          />
-        </div>
-        <div class="setting">
-          <span title={COPY.settings.lookNote}>{COPY.settings.look}</span>
-          <Segmented
-            label={COPY.settings.look}
-            value={s.look}
-            options={[
-              { value: 'pixel', label: COPY.settings.lookPixel },
-              { value: '3d', label: COPY.settings.look3d },
-            ]}
-            onChange={(v) => {
-              app.updateSettings({ look: v });
-              location.reload();
-            }}
           />
         </div>
         <div class="setting">

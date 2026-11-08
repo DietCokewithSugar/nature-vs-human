@@ -1,26 +1,9 @@
-import '@fontsource/zcool-kuaile/400.css';
-import '@fontsource-variable/fredoka/wght.css';
-import '@radix-ui/colors/olive.css';
-import '@radix-ui/colors/olive-alpha.css';
-import '@radix-ui/colors/grass.css';
-import '@radix-ui/colors/amber.css';
-import '@radix-ui/colors/tomato.css';
-import '@radix-ui/colors/cyan.css';
-import '@radix-ui/colors/lime.css';
-import '@radix-ui/colors/brown.css';
-import '@radix-ui/colors/orange.css';
-import '@radix-ui/colors/sky.css';
-import '@radix-ui/colors/gold.css';
-import '@radix-ui/colors/bronze.css';
-import '@radix-ui/colors/iris.css';
-import '@radix-ui/colors/jade.css';
-import '@radix-ui/colors/violet.css';
-import '@radix-ui/colors/slate.css';
-import '@radix-ui/colors/black-alpha.css';
-import '@radix-ui/colors/white-alpha.css';
+import '../styles/palette.css';
+import '../styles/frames.css';
 import '../styles/tokens.css';
 import '../styles/base.css';
 import '../styles/ui.css';
+import '../styles/pixel.css';
 
 import { signal } from '@preact/signals';
 import { render } from 'preact';
@@ -42,13 +25,11 @@ import {
 } from '../core/index.ts';
 import { Leaderboard } from '../data/leaderboard.ts';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type Settings } from '../data/storage.ts';
-import type { CityScene } from '../scene/city.ts';
 import { PixelScene } from '../pixel/scene.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
 import { Sfx } from '../ui/sfx.ts';
 import { detail, flash, frame, modal, placing, pushFloat, pushToast, rallying, setApp, showEra } from '../ui/store.ts';
-import { LOOK } from './look.ts';
 import { GameLoop } from './loop.ts';
 
 const game = new Game(loadGame());
@@ -58,8 +39,7 @@ sfx.muted = settings.value.muted;
 const leaderboard = new Leaderboard(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
-// The pixel map is the default; the old 3D scene (and three.js) loads only when asked for.
-const scene: PixelScene | CityScene = LOOK === '3d' ? new (await import('../scene/city.ts')).CityScene(canvas) : new PixelScene(canvas);
+const scene = new PixelScene(canvas);
 scene.setQuality(settings.value.quality);
 
 // ── Taps on the map ────────────────────────────────────────────
