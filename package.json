@@ -17,7 +17,8 @@
     "sim": "node --experimental-strip-types --no-warnings scripts/simulate.ts",
     "assets": "node scripts/fetch-assets.mjs",
     "report": "node --experimental-strip-types --no-warnings scripts/report.ts",
-    "models": "node scripts/build-models.mjs"
+    "models": "node scripts/build-models.mjs",
+    "sprites": "node scripts/bake-sprites.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fredoka": "5.2.10",
@@ -26,6 +27,7 @@
     "@radix-ui/colors": "3.0.0",
     "@supabase/supabase-js": "2.118.0",
     "break_infinity.js": "2.2.0",
+    "pixi.js": "8.22.0",
     "preact": "10.29.8",
     "three": "0.186.1"
   },

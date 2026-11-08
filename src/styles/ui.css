@@ -173,6 +173,10 @@
   pointer-events: none;
 }
 
+.thumb img[data-pixel] {
+  image-rendering: pixelated;
+}
+
 /* ── Top bar ─────────────────────────────────────────────────── */
 
 .topbar {

@@ -42,11 +42,13 @@ import {
 } from '../core/index.ts';
 import { Leaderboard } from '../data/leaderboard.ts';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type Settings } from '../data/storage.ts';
-import { CityScene } from '../scene/city.ts';
+import type { CityScene } from '../scene/city.ts';
+import { PixelScene } from '../pixel/scene.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
 import { Sfx } from '../ui/sfx.ts';
 import { detail, flash, frame, modal, placing, pushFloat, pushToast, rallying, setApp, showEra } from '../ui/store.ts';
+import { LOOK } from './look.ts';
 import { GameLoop } from './loop.ts';
 
 const game = new Game(loadGame());
@@ -56,7 +58,8 @@ sfx.muted = settings.value.muted;
 const leaderboard = new Leaderboard(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_ANON_KEY);
 
 const canvas = document.getElementById('scene') as HTMLCanvasElement;
-const scene = new CityScene(canvas);
+// The pixel map is the default; the old 3D scene (and three.js) loads only when asked for.
+const scene: PixelScene | CityScene = LOOK === '3d' ? new (await import('../scene/city.ts')).CityScene(canvas) : new PixelScene(canvas);
 scene.setQuality(settings.value.quality);
 
 // ── Taps on the map ────────────────────────────────────────────
@@ -302,6 +305,6 @@ setInterval(() => void leaderboard.submit(game.state), 30_000);
 setTimeout(() => void leaderboard.submit(game.state, true), 4_000);
 
 if (import.meta.env.DEV) {
-  (window as unknown as { __game: Game; __scene: CityScene }).__game = game;
-  (window as unknown as { __scene: CityScene }).__scene = scene;
+  (window as unknown as { __game: Game }).__game = game;
+  (window as unknown as { __scene: typeof scene }).__scene = scene;
 }

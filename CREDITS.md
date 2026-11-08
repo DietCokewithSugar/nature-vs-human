@@ -4,7 +4,7 @@
 
 以下模型来自 [Polyfork](https://polyfork.dev)，按 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 授权使用。
 
-改动说明：所有模型经 glTF-Transform 做了网格压缩（meshopt）、动画重采样和去重，游戏内统一缩放。以下生物是在 Polyfork 模型基础上改装的：猛犸（Elephant）、剑齿虎 / 老虎 / 野猫（Cat）、洞熊（Bear）、野猪 / 犀牛（Pig）、野牛（Ox）、蝗虫（Meadow grasshopper）、蚊子（Common wasp）、白蚁（Wood ant）。改装内容是用 Radix 配色重新上色、拉伸比例，并加上程序生成的象牙、獠牙、角和口器（见 src/scene/kitbash.ts）。人物模型的走路动作由代码驱动。帐篷由代码生成。
+改动说明：像素画面里的动物、建筑、树和道具都是由这些模型渲染、缩小、换成 Resurrect 64 调色板并加描边得到的像素图（见 src/bake/bake.ts）。所有模型经 glTF-Transform 做了网格压缩（meshopt）、动画重采样和去重，游戏内统一缩放。以下生物是在 Polyfork 模型基础上改装的：猛犸（Elephant）、剑齿虎 / 老虎 / 野猫（Cat）、洞熊（Bear）、野猪 / 犀牛（Pig）、野牛（Ox）、蝗虫（Meadow grasshopper）、蚊子（Common wasp）、白蚁（Wood ant）。改装内容是用 Radix 配色重新上色、拉伸比例，并加上程序生成的象牙、獠牙、角和口器（见 src/scene/kitbash.ts）。人物模型的走路动作由代码驱动。帐篷由代码生成。
 
 - [Wood ant](https://polyfork.dev/asset/wood-ant-base)
 - [Meadow grasshopper](https://polyfork.dev/asset/meadow-grasshopper-base)
@@ -94,7 +94,12 @@
 
 ## 代码库
 
+- [PixiJS](https://pixijs.com)，MIT License
 - [three.js](https://threejs.org)，MIT License
 - [Preact](https://preactjs.com)，MIT License
 - [break_infinity.js](https://github.com/Patashu/break_infinity.js)，MIT License
 - [Supabase JS](https://github.com/supabase/supabase-js)，MIT License
+
+## 调色板
+
+地图上所有像素使用 [Resurrect 64](https://lospec.com/palette-list/resurrect-64) 调色板，作者 [Kerrie Lake](https://lospec.com/kerrielake)。

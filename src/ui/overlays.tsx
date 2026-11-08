@@ -23,7 +23,6 @@ import {
 } from '../core/index.ts';
 import credits from '../data/credits.json';
 import { NICKNAME_MAX, type BoardKind, type BoardResult } from '../data/leaderboard.ts';
-import { LOOKS } from '../scene/creatures.ts';
 import { CloseButton, Essence, Meter, Segmented, Thumb } from './common.tsx';
 import { COPY } from './copy.ts';
 import { describeAura, describeEffects, describeMatchups, shortSeconds } from './describe.ts';
@@ -201,8 +200,7 @@ function SetupModal() {
 
 /** The model key for a unit's thumbnail. */
 export function unitModel(id: UnitId): { model: string; crop?: number } {
-  const look = LOOKS[id];
-  return look.human ? { model: look.model, crop: 0.5 } : { model: look.model };
+  return UNITS[id].tags.includes('human') ? { model: id, crop: 0.5 } : { model: id };
 }
 
 const hourText = (h: number) => {
@@ -730,8 +728,9 @@ function SettingsModal() {
           <h3>{COPY.settings.creditsOther}</h3>
           <ul class="credit-list plain">
             <li>ZCOOL KuaiLe · Fredoka — SIL OFL 1.1</li>
+            <li>Resurrect 64 调色板 — Kerrie Lake（lospec.com）</li>
             <li>Radix Colors — MIT</li>
-            <li>three.js · Preact · break_infinity.js · Supabase JS — MIT</li>
+            <li>PixiJS · three.js · Preact · break_infinity.js · Supabase JS — MIT</li>
           </ul>
         </div>
       </Modal>
@@ -763,6 +762,21 @@ function SettingsModal() {
               { value: 'low', label: COPY.settings.qualityLow },
             ]}
             onChange={(v) => app.updateSettings({ quality: v })}
+          />
+        </div>
+        <div class="setting">
+          <span title={COPY.settings.lookNote}>{COPY.settings.look}</span>
+          <Segmented
+            label={COPY.settings.look}
+            value={s.look}
+            options={[
+              { value: 'pixel', label: COPY.settings.lookPixel },
+              { value: '3d', label: COPY.settings.look3d },
+            ]}
+            onChange={(v) => {
+              app.updateSettings({ look: v });
+              location.reload();
+            }}
           />
         </div>
         <div class="setting">
