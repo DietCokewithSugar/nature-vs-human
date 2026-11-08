@@ -1,24 +1,34 @@
 import {
   Box3,
+  BufferGeometry,
   CanvasTexture,
   Color,
   DirectionalLight,
+  DoubleSide,
+  Float32BufferAttribute,
   Group,
   HemisphereLight,
+  InstancedMesh,
+  Line,
+  LineBasicMaterial,
   MathUtils,
+  Matrix4,
   Mesh,
-  MeshLambertMaterial,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   NeutralToneMapping,
   Object3D,
   OctahedronGeometry,
   PCFShadowMap,
   PerspectiveCamera,
+  PlaneGeometry,
   Raycaster,
+  RingGeometry,
   Scene,
+  Sprite,
+  SpriteMaterial,
   SRGBColorSpace,
   TorusGeometry,
-  BoxGeometry,
   Vector2,
   Vector3,
   WebGLRenderer,
@@ -28,67 +38,38 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import {
-  CREATURE_BY_ID,
-  CREATURE_IDS,
-  DOMESTICS,
-  LAIRS,
-  type CreatureId,
-  type DisasterId,
-  type DomesticId,
+  BUILDINGS,
+  CELL,
+  CELLS,
+  CELL_COUNT,
+  MAP_HALF,
+  NODES,
+  OPEN_HALF,
+  UNITS,
+  VOLCANOES,
+  cellAt,
+  daylight,
+  hourOf,
+  isNight,
+  tideLevel,
+  type Building,
+  type BuildingId,
+  type CoreEvent,
   type EraId,
+  type Game,
+  type Unit,
 } from '../core/index.ts';
 import { instantiate } from './assets.ts';
-import { VIEWS, Walker, visibleCount, type NavMode, type ViewId, type WalkerHost } from './creatures.ts';
+import { LOOKS, UnitView, type UnitHost } from './creatures.ts';
 import { Decor } from './decor.ts';
 import { DisasterFx } from './disasters.ts';
 import { Effects } from './effects.ts';
-import { Lairs } from './lairs.ts';
-import { footprint, type Rect } from './layout.ts';
-import { NavGrid } from './nav.ts';
-import { GROUND, PALETTE } from './palette.ts';
-import { Terrain } from './terrain.ts';
-import {
-  BRIDGES,
-  FENCES,
-  FRAMES,
-  GROUND_TILES,
-  LAIR_SPOTS,
-  LOTS,
-  MAP_HALF,
-  PROPS,
-  RAID_GATES,
-  VOLCANO,
-  type Lot,
-} from './world.ts';
+import { Bars, Icons, essenceTexture, type IconKind } from './marks.ts';
+import { PALETTE } from './palette.ts';
+import { Terrain, type GroundState } from './terrain.ts';
+import { auraLive, auraRadius } from '../core/sim/auras.ts';
 
-export interface SceneView {
-  era: EraId;
-  amounts: Record<CreatureId, number>;
-  defected: Partial<Record<CreatureId, number>>;
-  taming: Partial<Record<CreatureId, number>>;
-  research: number;
-  tide: boolean;
-  tideLevel: number;
-  surge: boolean;
-  rampage: boolean;
-  /** log10 of income per second; drives how often creatures attack. */
-  intensity: number;
-  outcome: 'running' | 'won' | 'lost';
-  /** Wrecked lairs: seconds until each grows back. */
-  lairs: Partial<Record<CreatureId, number>>;
-  raid: { target: CreatureId; left: number; total: number } | null;
-  disaster: { id: DisasterId; phase: 'warning' | 'active'; left: number; wrecked: CreatureId[] } | null;
-  /** 0..1 share of the bill paid: how far nature has crept into the city. */
-  creep: number;
-}
-
-export interface TapInfo {
-  x: number;
-  y: number;
-  hitBuilding: boolean;
-  lair: CreatureId | null;
-  raid: boolean;
-}
+export type SceneMode = 'normal' | 'place' | 'rally';
 
 export interface Insets {
   top: number;
@@ -97,27 +78,41 @@ export interface Insets {
   left: number;
 }
 
-type BuildingState = 'ok' | 'falling' | 'down' | 'rising';
+type BState = 'rising' | 'ok' | 'falling';
 
-interface Building {
-  lot: Lot;
-  model: string;
+interface BuildingView {
+  id: number;
+  kind: BuildingId;
+  side: Building['side'];
   outer: Group;
-  inner: Group;
+  inner: Object3D | null;
+  mats: MeshStandardMaterial[];
   base: Vector3;
   height: number;
   radius: number;
-  footprint: Rect;
-  hp: number;
-  state: BuildingState;
+  level: number;
+  build: number;
+  hpF: number;
+  lastHit: number;
+  hitFx: number;
+  state: BState;
   t: number;
   shake: number;
   tilt: Vector2;
-  floats: boolean;
-  lab: boolean;
-  /** Torn down for good once it has fallen (replaced by a newer era's building). */
-  retired: boolean;
-  tree: Group | null;
+  token: number;
+  /** Ground ring showing an effect building's reach. */
+  ring: Mesh | null;
+  /** Light at night (lamps, zappers, campfires). */
+  glow: Sprite | null;
+}
+
+interface BubbleView {
+  sprite: Sprite;
+  x: number;
+  z: number;
+  phase: number;
+  left: number;
+  pop: number;
 }
 
 interface Beacon {
@@ -127,23 +122,38 @@ interface Beacon {
   mat: MeshStandardMaterial;
 }
 
-interface Party {
-  target: CreatureId;
-  walkers: Walker[];
-  done: boolean;
+const TAP_SLOP = 7;
+
+/** The part of the map the camera frames in each era: it pulls back as the map opens. */
+function frameOf(era: EraId): { size: number; height: number; targetY: number } {
+  return { size: OPEN_HALF[era] * CELL * 2, height: 10 + era * 4, targetY: 1 + era };
 }
 
-const TAP_SLOP = 7;
-const RAID_TAP_RADIUS = 46;
+/** A soft round light for lamps at night. */
+function glowTexture(): CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d')!;
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.3, 'rgba(255,255,255,0.55)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new CanvasTexture(c);
+  tex.colorSpace = SRGBColorSpace;
+  return tex;
+}
 
-function skyTexture(): CanvasTexture {
+function skyTexture(top: string, bottom: string): CanvasTexture {
   const c = document.createElement('canvas');
   c.width = 2;
   c.height = 256;
   const g = c.getContext('2d')!;
   const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, PALETTE.skyTop);
-  grad.addColorStop(0.75, PALETTE.skyBottom);
+  grad.addColorStop(0, top);
+  grad.addColorStop(0.75, bottom);
   g.fillStyle = grad;
   g.fillRect(0, 0, 2, 256);
   const tex = new CanvasTexture(c);
@@ -151,18 +161,9 @@ function skyTexture(): CanvasTexture {
   return tex;
 }
 
-/** The lot's stage in an era: the latest entry at or before it. */
-function stageAt(lot: Lot, era: EraId): [string, number, 'height'?] | null {
-  for (let e = era; e >= 1; e--) {
-    const s = lot.eras[e as EraId];
-    if (s !== undefined) return s;
-  }
-  return null;
-}
-
 /**
- * Presentation layer: reads a SceneView every tick and renders the map.
- * Never mutates game state; taps are reported through `onTap`.
+ * Presentation layer: reads the core every tick and draws the map.
+ * Never mutates game state; taps go out through the on* callbacks.
  */
 export class CityScene {
   readonly renderer: WebGLRenderer;
@@ -170,34 +171,46 @@ export class CityScene {
   private scene = new Scene();
   private camera = new PerspectiveCamera(30, 1, 0.5, 1600);
   private composer: EffectComposer | null = null;
-  private gtao: GTAOPass | null = null;
   private sun: DirectionalLight;
+  private hemi: HemisphereLight;
   private effects: Effects;
   private terrain = new Terrain();
   private decor: Decor;
-  private lairs: Lairs;
   private fx: DisasterFx;
-  private nav = new NavGrid();
-  private navDirty = true;
   private world = new Group();
-  private buildings: Building[] = [];
-  private tiles = new Group();
-  private props = new Group();
+  private bars: Bars;
+  private icons: Icons;
+  private units = new Map<number, UnitView>();
+  private buildings = new Map<number, BuildingView>();
+  private bubbles = new Map<number, BubbleView>();
+  private bubbleMat: SpriteMaterial;
   private beacon: Beacon | null = null;
-  private walkers = new Map<ViewId, Walker[]>();
-  private party: Party | null = null;
+  private flag: Object3D | null = null;
+  private selectRing: Mesh;
+  private selected: number | null = null;
+  private overlay: InstancedMesh;
+  private border: Line;
   private raycaster = new Raycaster();
-  private view: SceneView | null = null;
+  private game: Game | null = null;
   private era: EraId | null = null;
-  private attackClock = 0;
-  private huntClock = 0;
+  private groundClock = 0;
+  private skyClock = 0;
+  private skyKey = '';
   private lastTime = performance.now();
   private quality: 'high' | 'low' = 'high';
   private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
   private insetsGoal: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
   private insetsSet = false;
-  private forest = false;
-  private host: WalkerHost;
+  private host: UnitHost;
+  private mode: SceneMode = 'normal';
+  private token = 0;
+  private hpOf = new Map<number, { hp: number; life: number }>();
+  private ringGeo = (() => {
+    const g = new RingGeometry(0.94, 1, 56);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  })();
+  private glowTex = glowTexture();
 
   // Camera rig
   private frameEra: EraId = 1;
@@ -219,7 +232,12 @@ export class CityScene {
   private azimuthStart = 0;
   private dragged = false;
 
-  onTap: (info: TapInfo) => void = () => {};
+  onBubble: (id: number, x: number, y: number) => void = () => {};
+  onBuilding: (id: number) => void = () => {};
+  onUnit: (id: number) => void = () => {};
+  onCell: (cell: number) => void = () => {};
+  onRally: (x: number, z: number) => void = () => {};
+  onEmpty: () => void = () => {};
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -227,36 +245,55 @@ export class CityScene {
     this.renderer.outputColorSpace = SRGBColorSpace;
     this.renderer.toneMapping = NeutralToneMapping;
     this.renderer.shadowMap.type = PCFShadowMap;
-    this.scene.background = skyTexture();
+    this.scene.background = skyTexture(PALETTE.skyTop, PALETTE.skyBottom);
 
-    this.scene.add(new HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 2.2));
+    this.hemi = new HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 2.2);
+    this.scene.add(this.hemi);
     this.sun = new DirectionalLight(PALETTE.sun, 2.6);
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.05;
-    const sc = this.sun.shadow.camera;
-    sc.near = 1;
-    sc.far = 400;
+    this.sun.shadow.camera.near = 1;
+    this.sun.shadow.camera.far = 400;
     this.scene.add(this.sun, this.sun.target);
     this.effects = new Effects(this.scene);
 
     this.scene.add(this.world);
-    this.world.add(this.terrain.group, this.tiles, this.props);
+    this.world.add(this.terrain.group);
     this.decor = new Decor(this.terrain);
     this.world.add(this.decor.group);
-    this.lairs = new Lairs(this.terrain, this.effects);
-    this.world.add(this.lairs.group);
     this.fx = new DisasterFx(this.scene, this.terrain, this.effects);
-    void this.addVolcano();
+    this.bars = new Bars(this.scene);
+    this.icons = new Icons(this.scene);
+    this.bubbleMat = new SpriteMaterial({ map: essenceTexture(), transparent: true, depthWrite: false, toneMapped: false });
+    void this.addVolcanoes();
+    void this.addFlag();
+
+    const ringGeo = new RingGeometry(0.82, 1, 48);
+    ringGeo.rotateX(-Math.PI / 2);
+    this.selectRing = new Mesh(ringGeo, new MeshBasicMaterial({ color: PALETTE.flag, transparent: true, opacity: 0.9, depthWrite: false, side: DoubleSide }));
+    this.selectRing.visible = false;
+    this.selectRing.renderOrder = 4;
+    this.scene.add(this.selectRing);
+
+    const quad = new PlaneGeometry(CELL * 0.9, CELL * 0.9);
+    quad.rotateX(-Math.PI / 2);
+    this.overlay = new InstancedMesh(quad, new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }), CELL_COUNT);
+    this.overlay.count = 0;
+    this.overlay.renderOrder = 3;
+    this.overlay.frustumCulled = false;
+    this.scene.add(this.overlay);
+
+    this.border = new Line(new BufferGeometry(), new LineBasicMaterial({ color: PALETTE.flag, transparent: true, opacity: 0.55 }));
+    this.border.renderOrder = 3;
+    this.scene.add(this.border);
 
     this.host = {
       groundAt: (x, z) => this.terrain.heightAt(x, z),
       waterLevel: () => this.waterLevel(),
-      wanderPoint: (from, home, radius, mode) => this.wanderPoint(from, home, radius, mode),
-      route: (from, to, mode) => this.route(from, to, mode),
     };
 
-    this.setEra(1);
+    this.flyTo(1);
     this.bindPointer();
     this.resize();
     this.renderer.setAnimationLoop(() => this.frame());
@@ -278,7 +315,6 @@ export class CityScene {
         composer.addPass(gtao);
         composer.addPass(new OutputPass());
         this.composer = composer;
-        this.gtao = gtao;
       } catch (err) {
         console.warn('Ambient occlusion unavailable', err);
       }
@@ -286,7 +322,6 @@ export class CityScene {
     this.resize();
   }
 
-  /** The part of the canvas the UI covers. The framing eases to the new space rather than jumping. */
   setInsets(insets: Insets): void {
     this.insetsGoal = { ...insets };
     if (!this.insetsSet) {
@@ -309,6 +344,227 @@ export class CityScene {
     this.applyView();
   }
 
+  /** Placement mode shows where a building can go: green own ground, gold neutral, violet enemy. */
+  setMode(mode: SceneMode, sites?: Map<number, number>): void {
+    this.mode = mode;
+    if (mode !== 'place' || !sites) {
+      this.overlay.count = 0;
+      return;
+    }
+    const m = new Matrix4();
+    const c = new Color();
+    let n = 0;
+    for (const [k, speed] of sites) {
+      const cell = CELLS[k]!;
+      let y = -Infinity;
+      for (const [dx, dz] of [[0, 0], [-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]] as const) {
+        y = Math.max(y, this.terrain.targetHeightAt(cell.x + dx, cell.z + dz));
+      }
+      m.makeTranslation(cell.x, y + 0.25, cell.z);
+      this.overlay.setMatrixAt(n, m);
+      this.overlay.setColorAt(n, c.set(speed >= 1 ? PALETTE.siteOwn : speed >= 0.3 ? PALETTE.siteEnemy : PALETTE.siteWild));
+      n++;
+    }
+    this.overlay.count = n;
+    this.overlay.instanceMatrix.needsUpdate = true;
+    if (this.overlay.instanceColor) this.overlay.instanceColor.needsUpdate = true;
+  }
+
+  select(id: number | null): void {
+    this.selected = id;
+  }
+
+  /** Read the core. Called at the core's tick rate. */
+  sync(game: Game): void {
+    this.game = game;
+    const run = game.run;
+    if (run.era !== this.era) {
+      const first = this.era === null;
+      this.era = run.era;
+      this.drawBorder(run.era);
+      this.groundClock = 0;
+      if (!first || !this.moved) this.flyTo(run.era);
+    }
+    this.groundClock -= 0.05;
+    if (this.groundClock <= 0) {
+      this.groundClock = 0.5;
+      const built = new Uint8Array(CELL_COUNT);
+      for (const b of run.buildings) built[b.cell] = 1;
+      const st: GroundState = { era: run.era, owner: run.owner, control: run.control, built };
+      this.terrain.setGround(st);
+      this.decor.setGround(st);
+    }
+    // Units.
+    const seen = new Set<number>();
+    for (const u of run.units) {
+      seen.add(u.id);
+      let v = this.units.get(u.id);
+      if (!v || v.kind !== u.kind) {
+        if (v) v.die();
+        v = new UnitView(u, this.host);
+        this.scene.add(v.root);
+        this.units.set(u.id, v);
+      }
+      v.sync(u);
+      this.hpOf.set(u.id, { hp: u.hp / game.unitMaxHp(u.kind), life: 1 - u.age / u.life });
+    }
+    for (const [id, v] of this.units) {
+      if (!seen.has(id) && !v.dying) {
+        v.die();
+        this.hpOf.delete(id);
+      }
+    }
+    // Buildings.
+    const standing = new Set<number>();
+    for (const b of run.buildings) {
+      standing.add(b.id);
+      let v = this.buildings.get(b.id);
+      if (!v) v = this.addBuilding(b);
+      this.syncBuilding(v, b, game);
+    }
+    for (const [id, v] of this.buildings) if (!standing.has(id) && v.state !== 'falling') this.collapse(v);
+    // Bubbles.
+    const live = new Set<number>();
+    for (const b of run.bubbles) {
+      live.add(b.id);
+      let v = this.bubbles.get(b.id);
+      if (!v) {
+        const c = CELLS[NODES[b.node]!.cell]!;
+        const sprite = new Sprite(this.bubbleMat.clone());
+        sprite.renderOrder = 6;
+        sprite.scale.setScalar(0.01);
+        this.scene.add(sprite);
+        v = { sprite, x: c.x, z: c.z, phase: Math.random() * 6, left: b.left, pop: 0 };
+        this.bubbles.set(b.id, v);
+        this.effects.ring(new Vector3(c.x, this.terrain.heightAt(c.x, c.z) + 0.2, c.z), 2.4, PALETTE.essence);
+      }
+      v.left = b.left;
+    }
+    for (const [id, v] of this.bubbles) {
+      if (!live.has(id) && v.pop === 0) v.pop = 0.001;
+    }
+    // The rally flag.
+    if (this.flag) {
+      this.flag.visible = !!run.rally;
+      if (run.rally) this.flag.position.set(run.rally.x, this.terrain.heightAt(run.rally.x, run.rally.z), run.rally.z);
+    }
+    this.fx.sync(run.disaster, run.era, (x, z, r) => this.shakeArea(x, z, r));
+  }
+
+  /** Visual reactions to what the core reports. */
+  event(e: CoreEvent): void {
+    switch (e.type) {
+      case 'unitDied': {
+        const v = this.units.get(e.id);
+        if (v && e.cause !== 'age') this.effects.puff(v.position.clone().setY(v.position.y + 0.8), 1.2, PALETTE.dust, 1.2, 0.8);
+        if (v && e.cause === 'capture') this.effects.ring(v.position.clone(), 2.5, PALETTE.beacon[2]);
+        v?.die();
+        break;
+      }
+      case 'buildingDestroyed': {
+        const v = this.buildings.get(e.id);
+        if (v) this.collapse(v);
+        break;
+      }
+      case 'buildingUpgraded': {
+        const v = this.buildings.get(e.id);
+        if (v) {
+          this.effects.ring(v.base.clone().setY(v.base.y + 0.3), v.radius * 2.2, e.kind in BUILDINGS && BUILDINGS[e.kind].side === 'nature' ? PALETTE.sprout : PALETTE.beacon[1]);
+          this.effects.burst(v.base.clone().setY(v.base.y + v.height * 0.6), 8, 0.6, [PALETTE.sprout, PALETTE.sproutLight]);
+        }
+        break;
+      }
+      case 'collected': {
+        for (const [, v] of this.bubbles) {
+          if (Math.abs(v.x - e.x) < 0.1 && Math.abs(v.z - e.z) < 0.1 && v.pop === 0) v.pop = 0.001;
+        }
+        this.effects.burst(new Vector3(e.x, this.terrain.heightAt(e.x, e.z) + 3, e.z), 7, 0.45, [PALETTE.essence, PALETTE.essenceGlow]);
+        break;
+      }
+      case 'defected': {
+        for (const v of this.units.values()) if (v.kind === e.id) this.effects.puff(v.position.clone().setY(v.position.y + 1), 2.2, PALETTE.dust, 1.4, 1.1);
+        break;
+      }
+      case 'countermeasure':
+      case 'active':
+        this.pulseLab();
+        break;
+      case 'strike': {
+        // A bird strike: feathers, smoke and the plane spinning down.
+        const at = new Vector3(e.x, this.terrain.heightAt(e.x, e.z) + 15, e.z);
+        this.effects.burst(at, 18, 1.2, [PALETTE.dust, PALETTE.smoke, PALETTE.hit]);
+        this.effects.puff(at, 3.5, PALETTE.smoke, -2, 2.5);
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  /** Frame an era's part of the map. */
+  flyTo(era: EraId): void {
+    this.frameEra = era;
+    const f = frameOf(era);
+    this.targetGoal.set(0, f.targetY, 0);
+    this.azimuthGoal = 0.55;
+    this.zoom = 1;
+    this.moved = false;
+    this.resize();
+  }
+
+  recenter(): void {
+    this.flyTo(this.era ?? 1);
+  }
+
+  get cameraMoved(): boolean {
+    return this.moved;
+  }
+
+  /** Point the camera at a spot (a building card's "show me"). */
+  lookAt(x: number, z: number): void {
+    this.targetGoal.set(x, 1, z);
+    this.zoom = 0.5;
+    this.moved = true;
+  }
+
+  /** A new run: every view goes. */
+  reset(): void {
+    for (const v of this.units.values()) {
+      v.removed = true;
+      v.root.removeFromParent();
+    }
+    this.units.clear();
+    for (const v of this.buildings.values()) v.outer.removeFromParent();
+    this.buildings.clear();
+    for (const v of this.bubbles.values()) v.sprite.removeFromParent();
+    this.bubbles.clear();
+    this.era = null;
+    this.selected = null;
+    this.setMode('normal');
+    this.flyTo(1);
+  }
+
+  /** Where a world point lands on screen (CSS pixels), and whether it is in view. */
+  toScreen(x: number, y: number, z: number): { x: number; y: number; onScreen: boolean } {
+    const v = new Vector3(x, y, z).project(this.camera);
+    const w = this.canvas.clientWidth || window.innerWidth;
+    const h = this.canvas.clientHeight || window.innerHeight;
+    const sx = ((v.x + 1) / 2) * w;
+    const sy = ((1 - v.y) / 2) * h;
+    return { x: sx, y: sy, onScreen: v.z < 1 && sx >= 0 && sx <= w && sy >= 0 && sy <= h };
+  }
+
+  groundY(x: number, z: number): number {
+    return this.terrain.heightAt(x, z);
+  }
+
+  dispose(): void {
+    this.renderer.setAnimationLoop(null);
+    this.renderer.dispose();
+  }
+
+  // ── View fitting ─────────────────────────────────────────────
+
   private applyView(): void {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
@@ -319,7 +575,14 @@ export class CityScene {
     this.camera.aspect = w / h;
     this.camera.setViewOffset(w, h, w / 2 - cx, h / 2 - cy, w, h);
     this.camera.updateProjectionMatrix();
-    this.updateFit(fw, fh);
+    const f = frameOf(this.frameEra);
+    const halfTan = Math.tan(MathUtils.degToRad(this.camera.fov) / 2);
+    const hTan = (halfTan * fw) / h;
+    const vTan = (halfTan * fh) / h;
+    const byWidth = ((f.size * 1.18) / 2) / hTan;
+    const tall = (f.size * 1.18 * Math.cos(this.polar) + f.height * Math.sin(this.polar)) / 2;
+    const byHeight = (tall * 1.04) / vTan;
+    this.fitDistance = Math.max(byWidth, byHeight) * 0.92;
   }
 
   private easeInsets(dt: number): void {
@@ -335,702 +598,411 @@ export class CityScene {
     if (moved) this.applyView();
   }
 
-  private updateFit(fw: number, fh: number): void {
-    const f = FRAMES[this.frameEra];
-    const fullH = this.canvas.clientHeight || window.innerHeight;
-    const halfTan = Math.tan(MathUtils.degToRad(this.camera.fov) / 2);
-    const hTan = (halfTan * fw) / fullH;
-    const vTan = (halfTan * fh) / fullH;
-    // Fit the frame's diagonal across, and its depth (foreshortened) plus building height down.
-    const byWidth = ((f.size * 1.18) / 2) / hTan;
-    const tall = (f.size * 1.18 * Math.cos(this.polar) + f.height * Math.sin(this.polar)) / 2;
-    const byHeight = (tall * 1.04) / vTan;
-    this.fitDistance = Math.max(byWidth, byHeight) * 0.92;
+  private drawBorder(era: EraId): void {
+    const r = OPEN_HALF[era] * CELL;
+    const pts: number[] = [];
+    const y = 0.6;
+    for (const [x, z] of [[-r, -r], [r, -r], [r, r], [-r, r], [-r, -r]] as const) pts.push(x, y, z);
+    this.border.geometry.setAttribute('position', new Float32BufferAttribute(pts, 3));
+    this.border.visible = era < 4;
   }
 
-  sync(view: SceneView): void {
-    this.view = view;
-    if (view.era !== this.era) {
-      this.setEra(view.era);
-      this.flyTo(view.era);
-    }
-    this.lairs.sync(view.era, view.lairs);
-    this.decor.setCreep(view.creep);
-    const running = view.outcome === 'running';
-    for (const id of CREATURE_IDS) {
-      // A wrecked lair sends out half as many.
-      const wrecked = (view.lairs[id] ?? 0) > 0;
-      const amount = running ? (view.amounts[id] ?? 0) : 0;
-      this.syncCreature(id, wrecked ? Math.sqrt(amount) : amount);
-    }
-    for (const [id, d] of Object.entries(DOMESTICS) as [DomesticId, (typeof DOMESTICS)[DomesticId]][]) {
-      this.syncCity(id, visibleCount(view.defected[d.from] ?? 0, VIEWS[id].cap));
-    }
-    const hunter = `hunter-${view.era}` as ViewId;
-    for (let e = 1; e <= 4; e++) {
-      const id = `hunter-${e}` as ViewId;
-      if (id !== hunter) this.syncCity(id, 0);
-    }
-    this.syncCity(hunter, running ? 1 + Math.floor(view.research * 3) : 0);
-    this.syncCity('scientist', view.era >= 3 && running ? 1 : 0);
-    this.syncRaid(view);
-    this.fx.sync(view.disaster, view.era, (id) => this.lairs.hit(id), (x, z, r) => this.shakeArea(x, z, r));
-  }
+  // ── Landmarks ────────────────────────────────────────────────
 
-  /** Frame an era's part of the map. */
-  flyTo(era: EraId): void {
-    this.frameEra = era;
-    const f = FRAMES[era];
-    this.targetGoal.set(f.x, f.targetY, f.z);
-    this.azimuthGoal = 0.55;
-    this.zoom = 1;
-    this.moved = false;
-    this.resize();
-  }
-
-  /** Back to the default view of the current era. */
-  recenter(): void {
-    this.flyTo(this.era ?? 1);
-  }
-
-  /** The player has panned, zoomed or turned away from the default view. */
-  get cameraMoved(): boolean {
-    return this.moved;
-  }
-
-  get focusedEra(): EraId {
-    return this.frameEra;
-  }
-
-  /** A new run: the map goes back to the ice age, every walker leaves. */
-  reset(): void {
-    this.setForest(false);
-    for (const list of this.walkers.values()) for (const w of list) w.dismiss();
-    this.endParty(false);
-    this.view = null;
-    this.era = null;
-    this.setEra(1);
-    this.flyTo(1);
-  }
-
-  setForest(on: boolean): void {
-    if (this.forest === on) return;
-    this.forest = on;
-    for (const b of this.buildings) {
-      if (b.retired) continue;
-      if (on) {
-        if (b.state === 'ok' || b.state === 'rising') this.collapse(b);
-        void this.growTree(b);
-      } else {
-        if (b.tree) {
-          b.tree.userData.shrink = true;
-          b.tree = null;
+  private async addVolcanoes(): Promise<void> {
+    for (const [i, v] of VOLCANOES.entries()) {
+      const prep = await instantiate('volcano', v.size);
+      prep.object.position.set(v.x, this.terrain.targetHeightAt(v.x, v.z) - 1, v.z);
+      prep.object.traverse((o) => {
+        const m = o as Mesh;
+        if (m.isMesh && (m.material as MeshStandardMaterial).emissive) {
+          const mat = m.material as MeshStandardMaterial;
+          if (mat.emissive.getHex() !== 0) {
+            mat.emissive.set(PALETTE.lava);
+            mat.emissiveIntensity = 1.4;
+            mat.toneMapped = false;
+          }
         }
-        b.state = 'rising';
-        b.t = -Math.random() * 1.5;
-        b.hp = 100;
-      }
+      });
+      this.world.add(prep.object);
+      if (i === 0) this.fx.setVolcano(prep.object);
     }
   }
 
-  /** Visual feedback for an active skill or a human move. */
-  pulse(kind: 'countermeasure' | 'sabotage' | 'rescue' | 'rampage' | 'surge'): void {
-    const lab = this.buildings.find((b) => b.lab && !b.retired);
-    if (kind === 'countermeasure' && lab) {
-      this.effects.ring(lab.base.clone().setY(0.2), 18, PALETTE.beacon[2]);
-      this.effects.ring(lab.base.clone().setY(0.2), 10, PALETTE.beacon[1]);
-    }
-    if (kind === 'sabotage' && lab) this.hitBuilding(lab, lab.base.clone().setY(lab.height * 0.6), 4);
-    if (kind === 'rescue') {
-      for (const id of ['wolf', 'wildcat', 'boar'] as CreatureId[]) {
-        for (const w of this.walkers.get(id) ?? []) this.effects.ring(w.position.clone(), 3, PALETTE.heart);
-      }
-    }
-    if (kind === 'rampage') {
-      for (const id of ['cavebear', 'mammoth', 'boar', 'bison', 'rhino', 'elephant'] as CreatureId[]) {
-        for (const w of this.walkers.get(id) ?? []) this.effects.dust(w.position.clone(), 3, 6);
-      }
-    }
-  }
-
-  /** A species switched sides: each visible animal turns into its tame cousin on the spot. */
-  defect(id: CreatureId): void {
-    const domestic = CREATURE_BY_ID[id].tame;
-    if (!domestic) return;
-    const list = this.walkers.get(id) ?? [];
-    const tame = this.walkers.get(domestic) ?? [];
-    this.walkers.set(domestic, tame);
-    for (const w of list) {
-      this.effects.puff(w.position.clone().setY(w.position.y + 1), 2.4, PALETTE.dust, 1.5, 1.2);
-      if (tame.length < VIEWS[domestic].cap) {
-        const t = new Walker(domestic, VIEWS[domestic], this.host, this.cityHome(), 16, w.position.clone());
-        this.scene.add(t.root);
-        tame.push(t);
-      }
-      w.dismiss();
-    }
-  }
-
-  /** Where the raid party is on screen, for the tap-to-repel marker. Null when there is none. */
-  raidScreen(): { x: number; y: number; onScreen: boolean } | null {
-    const p = this.party;
-    if (!p || p.done) return null;
-    const alive = p.walkers.filter((w) => w.ready && !w.leaving);
-    if (!alive.length) return null;
-    const c = new Vector3();
-    for (const w of alive) c.add(w.position);
-    c.divideScalar(alive.length);
-    c.y += 4;
-    const v = c.project(this.camera);
-    const w = this.canvas.clientWidth || window.innerWidth;
-    const h = this.canvas.clientHeight || window.innerHeight;
-    const x = ((v.x + 1) / 2) * w;
-    const y = ((1 - v.y) / 2) * h;
-    const onScreen = v.z < 1 && x > this.insets.left && x < w - this.insets.right && y > this.insets.top && y < h - this.insets.bottom;
-    return { x, y, onScreen };
-  }
-
-  /** Point the camera at a lair (from the creature card). */
-  lookAtLair(id: CreatureId): void {
-    const s = LAIR_SPOTS[id];
-    this.targetGoal.set(s.x, 1, s.z);
-    this.zoom = 0.55;
-    this.moved = true;
-  }
-
-  dispose(): void {
-    this.renderer.setAnimationLoop(null);
-    this.renderer.dispose();
-  }
-
-  // ── Era layout ───────────────────────────────────────────────
-
-  private setEra(era: EraId): void {
-    if (this.era === era) return;
-    this.era = era;
-    this.terrain.setEra(era);
-    this.decor.setEra(era);
-    this.buildTiles(era);
-    this.buildProps(era);
-    for (const lot of LOTS) this.applyLot(lot, era);
-    this.navDirty = true;
-  }
-
-  private applyLot(lot: Lot, era: EraId): void {
-    const stage = stageAt(lot, era);
-    const current = this.buildings.find((b) => b.lot === lot && !b.retired);
-    if (current && stage && current.model === stage[0]) return;
-    if (current) {
-      current.retired = true;
-      if (current.state !== 'down') this.collapse(current);
-    }
-    if (stage) void this.addBuilding(lot, stage, current ? 1.2 : 0);
-  }
-
-  private buildTiles(era: EraId): void {
-    for (const child of [...this.tiles.children]) {
-      child.userData.sink = 1;
-    }
-    const group = new Group();
-    GROUND_TILES[era].forEach((t, i) => {
-      const w = t.x1 - t.x0;
-      const d = t.z1 - t.z0;
-      const h = t.h ?? 0.14;
-      const m = new Mesh(new BoxGeometry(w, h, d), new MeshLambertMaterial({ color: GROUND[t.color] }));
-      m.position.set((t.x0 + t.x1) / 2, (t.y ?? 0) - h / 2 + 0.06 + i * 0.006, (t.z0 + t.z1) / 2);
-      m.receiveShadow = true;
-      group.add(m);
-    });
-    group.userData.rise = 0;
-    group.position.y = -0.4;
-    this.tiles.add(group);
-  }
-
-  private buildProps(era: EraId): void {
-    for (const child of [...this.props.children]) child.userData.shrink = true;
-    const add = async (model: string, x: number, z: number, size: number, rot = 0, by?: 'length' | 'height') => {
-      const prep = await instantiate(model, size, by);
-      if (this.era !== era) return;
-      prep.object.rotation.y = (rot * Math.PI) / 2;
-      prep.object.position.set(x, this.terrain.targetHeightAt(x, z), z);
-      prep.object.scale.setScalar(0.001);
-      prep.object.userData.grow = -Math.random() * 0.6;
-      this.props.add(prep.object);
-    };
-    for (const p of PROPS) if (era >= p.from && era <= (p.to ?? 4)) void add(p.model, p.x, p.z, p.size, p.rot, p.by);
-    for (const f of FENCES) if (era >= f.era) void add('fence', f.x, f.z, 4, f.rot);
-  }
-
-  private async addVolcano(): Promise<void> {
-    const prep = await instantiate('volcano', VOLCANO.size);
-    prep.object.position.set(VOLCANO.x, this.terrain.targetHeightAt(VOLCANO.x, VOLCANO.z) - 1.2, VOLCANO.z);
-    prep.object.traverse((o) => {
-      const m = o as Mesh;
-      if (m.isMesh && (m.material as MeshStandardMaterial).emissiveIntensity !== undefined) {
-        const mat = m.material as MeshStandardMaterial;
-        if (mat.emissive.getHex() !== 0) {
-          mat.emissive.set(PALETTE.lava);
-          mat.emissiveIntensity = 1.4;
-          mat.toneMapped = false;
-        }
-      }
-    });
-    this.world.add(prep.object);
-    this.fx.setVolcano(prep.object);
+  private async addFlag(): Promise<void> {
+    const prep = await instantiate('flag', 4.2, 'height');
+    prep.object.visible = false;
+    this.scene.add(prep.object);
+    this.flag = prep.object;
   }
 
   // ── Buildings ────────────────────────────────────────────────
 
-  private async addBuilding(lot: Lot, stage: [string, number, 'height'?], delay: number): Promise<void> {
-    const [model, size, by] = stage;
-    const prep = await instantiate(model, size, by);
-    if (this.era === null || stageAt(lot, this.era)?.[0] !== model) return;
-    const outer = new Group();
-    const inner = prep.object;
-    outer.add(inner);
-    const y = lot.floats ? 0 : this.terrain.targetHeightAt(lot.x, lot.z);
-    outer.position.set(lot.x, y, lot.z);
-    this.world.add(outer);
-    const box = new Box3().setFromObject(inner).getSize(new Vector3());
-    inner.rotation.y = ((lot.rot ?? 0) * Math.PI) / 2;
-    const b: Building = {
-      lot,
-      model,
-      outer,
-      inner,
-      base: new Vector3(lot.x, y, lot.z),
-      height: prep.height,
-      radius: Math.max(box.x, box.z) / 2,
-      footprint: footprint({ model, x: lot.x, z: lot.z, rot: lot.rot, size }, { w: box.x, d: box.z }, 0.6),
-      hp: 100,
+  private addBuilding(b: Building): BuildingView {
+    const v: BuildingView = {
+      id: b.id,
+      kind: b.kind,
+      side: b.side,
+      outer: new Group(),
+      inner: null,
+      mats: [],
+      base: new Vector3(b.x, this.terrain.targetHeightAt(b.x, b.z), b.z),
+      height: 3,
+      radius: 2,
+      level: b.level,
+      build: b.build,
+      hpF: 1,
+      lastHit: b.hitAt,
+      hitFx: 0,
       state: 'rising',
-      t: -delay - Math.random() * 0.8,
+      t: 0,
       shake: 0,
       tilt: new Vector2(),
-      floats: !!lot.floats,
-      lab: !!lot.lab,
-      retired: false,
-      tree: null,
+      token: 0,
+      ring: null,
+      glow: null,
     };
-    outer.userData.building = b;
-    inner.scale.y = 0.001;
-    this.buildings.push(b);
-    this.navDirty = true;
-    if (b.lab) this.setBeacon(b);
-  }
-
-  private setBeacon(b: Building): void {
-    if (!this.beacon) {
-      const group = new Group();
-      const mat = new MeshStandardMaterial({ color: PALETTE.beacon[0], emissive: PALETTE.beacon[0], emissiveIntensity: 0.6, flatShading: true });
-      const gem = new Mesh(new OctahedronGeometry(1.3, 0), mat);
-      const ring = new Mesh(new TorusGeometry(2.3, 0.14, 6, 32), mat);
-      ring.rotation.x = Math.PI / 2;
-      group.add(gem, ring);
-      this.world.add(group);
-      this.beacon = { group, gem, ring, mat };
+    const def = BUILDINGS[b.kind];
+    if (def.aura) {
+      const ring = new Mesh(this.ringGeo, new MeshBasicMaterial({ color: def.side === 'nature' ? PALETTE.auraNature : PALETTE.auraHuman, transparent: true, opacity: 0.35, depthWrite: false, side: DoubleSide }));
+      ring.renderOrder = 3;
+      ring.position.copy(v.base).setY(v.base.y + 0.3);
+      this.scene.add(ring);
+      v.ring = ring;
     }
-    this.beacon.group.userData.lab = b;
+    if (b.kind === 'lamp' || b.kind === 'zapper' || b.kind === 'campfire') {
+      const glow = new Sprite(new SpriteMaterial({ map: this.glowTex, color: b.kind === 'zapper' ? PALETTE.zap : PALETTE.lampLight, transparent: true, depthWrite: false, toneMapped: false, opacity: 0 }));
+      glow.renderOrder = 5;
+      this.scene.add(glow);
+      v.glow = glow;
+    }
+    v.outer.position.copy(v.base);
+    v.outer.userData.building = b.id;
+    this.world.add(v.outer);
+    this.buildings.set(b.id, v);
+    void this.loadModel(v, b.kind);
+    return v;
   }
 
-  private async growTree(b: Building): Promise<void> {
-    const kinds = ['tree-oak', 'tree-broadleaf', 'tree-pine', 'tree-birch', 'spruce'];
-    const kind = kinds[Math.floor(Math.random() * kinds.length)]!;
-    const prep = await instantiate(kind, Math.max(4, b.radius * 1.6));
-    if (!this.forest) return;
-    const tree = prep.object;
-    tree.position.copy(b.base);
-    tree.scale.setScalar(0.001);
-    tree.userData.grow = -Math.random();
-    this.world.add(tree);
-    b.tree = tree;
+  private async loadModel(v: BuildingView, kind: BuildingId): Promise<void> {
+    const token = ++this.token;
+    v.token = token;
+    const def = BUILDINGS[kind];
+    const prep = await instantiate(def.model, def.size, def.by);
+    if (v.token !== token || !this.buildings.has(v.id)) return;
+    const old = v.inner;
+    if (old) {
+      this.effects.dust(v.base.clone().setY(v.base.y + 0.5), Math.max(2, v.radius), 8);
+      old.removeFromParent();
+    }
+    const inner = prep.object;
+    v.mats = [];
+    inner.traverse((o) => {
+      const m = o as Mesh;
+      if (!m.isMesh) return;
+      const mat = (m.material as MeshStandardMaterial).clone();
+      m.material = mat;
+      v.mats.push(mat);
+      o.userData.building = v.id;
+    });
+    inner.rotation.y = ((Math.floor(Math.abs(Math.sin(v.id * 12.9898) * 4)) % 4) * Math.PI) / 2;
+    v.outer.add(inner);
+    v.inner = inner;
+    const box = new Box3().setFromObject(inner).getSize(new Vector3());
+    v.height = prep.height;
+    v.radius = Math.max(box.x, box.z) / 2;
+    v.state = 'rising';
+    v.t = 0;
+    inner.scale.y = 0.001;
   }
 
-  private standing(): Building[] {
-    return this.buildings.filter((b) => b.state === 'ok' && !b.retired);
+  private syncBuilding(v: BuildingView, b: Building, game: Game): void {
+    if (b.kind !== v.kind) {
+      v.kind = b.kind;
+      void this.loadModel(v, b.kind);
+    }
+    if (b.level !== v.level) v.level = b.level;
+    v.build = b.build;
+    v.hpF = Math.max(0, b.hp / game.buildingMaxHp(b));
+    if (b.hitAt !== v.lastHit) {
+      v.lastHit = b.hitAt;
+      v.shake = Math.min(1, v.shake + 0.35);
+      if (v.hitFx <= 0) {
+        v.hitFx = 0.45;
+        this.effects.burst(v.base.clone().setY(v.base.y + Math.min(v.height * 0.6, 4)), 3, 0.45);
+      }
+    }
   }
 
-  private hitBuilding(b: Building, at: Vector3, strength: number): void {
-    if (b.state !== 'ok') return;
-    b.shake = Math.min(1, b.shake + 0.5 * strength);
-    b.hp -= 6 * strength + Math.random() * 6;
-    this.effects.burst(at, Math.round(4 + strength * 3), Math.min(1.6, 0.5 + strength * 0.4));
-    if (Math.random() < 0.35) this.effects.puff(at, 1 + strength, PALETTE.smoke, 2, 1.4);
-    if (b.hp <= 0) this.collapse(b);
+  private collapse(v: BuildingView): void {
+    v.state = 'falling';
+    v.t = 0;
+    v.tilt.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
+    const at = v.base.clone().setY(v.base.y + 0.5);
+    this.effects.dust(at, Math.max(3, v.radius * 1.2), 10);
+    this.effects.burst(at.clone().setY(v.base.y + v.height * 0.4), 16, 1.2);
+    this.effects.ring(at, v.radius * 1.8, PALETTE.dust);
   }
 
-  private collapse(b: Building): void {
-    b.state = 'falling';
-    b.t = 0;
-    b.tilt.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
-    const at = b.base.clone().setY(b.base.y + 0.5);
-    this.effects.dust(at, Math.max(3, b.radius * 1.2), 10);
-    this.effects.burst(at.clone().setY(b.base.y + b.height * 0.4), 18, 1.4);
-    this.effects.ring(at, b.radius * 1.8, PALETTE.dust);
-  }
-
-  /** Disasters shake whatever stands in their way. */
   private shakeArea(x: number, z: number, r: number): void {
-    for (const b of this.standing()) {
-      const d = Math.hypot(b.base.x - x, b.base.z - z);
-      if (d < r) this.hitBuilding(b, b.base.clone().setY(b.base.y + b.height * 0.5), 2.2 * (1 - d / r) + 0.6);
+    for (const v of this.buildings.values()) {
+      if (Math.hypot(v.base.x - x, v.base.z - z) < r) v.shake = Math.min(1, v.shake + 0.4);
     }
   }
 
   private updateBuildings(dt: number): void {
     const level = this.waterLevel();
-    for (let i = this.buildings.length - 1; i >= 0; i--) {
-      const b = this.buildings[i]!;
-      const inner = b.inner;
-      switch (b.state) {
-        case 'rising': {
-          b.t += dt;
-          const k = MathUtils.clamp(b.t / 1.1, 0, 1);
-          inner.scale.y = Math.max(0.001, MathUtils.smootherstep(k, 0, 1));
-          b.outer.rotation.set(0, 0, 0);
-          if (k >= 1) {
-            b.state = 'ok';
-            b.hp = 100;
-          }
-          break;
+    const night = isNight(this.game?.run.time ?? 0);
+    for (const [id, v] of this.buildings) {
+      const inner = v.inner;
+      v.hitFx -= dt;
+      const scale = 1 + 0.09 * (v.level - 1);
+      if (v.state === 'falling') {
+        v.t += dt;
+        const k = MathUtils.clamp(v.t / 1.3, 0, 1);
+        const e = k * k;
+        if (inner) inner.scale.set(scale, Math.max(0.001, (1 - e) * scale), scale);
+        v.outer.rotation.x = v.tilt.x * e;
+        v.outer.rotation.z = v.tilt.y * e;
+        if (v.ring) v.ring.visible = false;
+        if (v.glow) v.glow.visible = false;
+        if (k >= 1) {
+          v.outer.removeFromParent();
+          v.ring?.removeFromParent();
+          v.glow?.removeFromParent();
+          this.buildings.delete(id);
         }
-        case 'falling': {
-          b.t += dt;
-          const k = MathUtils.clamp(b.t / 1.4, 0, 1);
-          const e = k * k;
-          inner.scale.y = Math.max(0.001, 1 - e);
-          b.outer.rotation.x = b.tilt.x * e;
-          b.outer.rotation.z = b.tilt.y * e;
-          if (k >= 1) {
-            b.state = 'down';
-            b.t = 0;
-          }
-          break;
-        }
-        case 'down': {
-          if (b.retired) {
-            b.outer.removeFromParent();
-            this.buildings.splice(i, 1);
-            this.navDirty = true;
-            continue;
-          }
-          b.t += dt;
-          if (!this.forest && b.t > 7 + Math.random() * 6) {
-            b.state = 'rising';
-            b.t = 0;
-            b.outer.rotation.set(0, 0, 0);
-          }
-          break;
-        }
-        case 'ok': {
-          if (b.hp < 55 && Math.random() < dt * 0.6) {
-            this.effects.puff(b.base.clone().setY(b.base.y + b.height * 0.9), 1.4, PALETTE.smoke, 2.4, 2);
-          }
-          break;
-        }
+        continue;
       }
-      if (b.shake > 0) {
-        b.shake = Math.max(0, b.shake - dt * 2.5);
-        const s = b.shake * 0.12 * Math.min(2, b.radius / 4);
-        b.outer.position.x = b.base.x + (Math.random() - 0.5) * s;
-        b.outer.position.z = b.base.z + (Math.random() - 0.5) * s;
+      if (inner) {
+        v.t += dt;
+        const rise = MathUtils.smootherstep(MathUtils.clamp(v.t / 1.1, 0, 1), 0, 1);
+        // Under construction: grows from the ground and stays see-through until done.
+        const built = v.build >= 1 ? 1 : 0.2 + 0.8 * v.build;
+        inner.scale.set(scale, Math.max(0.001, rise * built * scale), scale);
+        const ghost = v.build < 1;
+        for (const m of v.mats) {
+          if (m.transparent !== ghost) {
+            m.transparent = ghost;
+            m.needsUpdate = true;
+          }
+          m.opacity = ghost ? 0.55 : 1;
+        }
+        if (ghost && Math.random() < dt * 1.2) this.effects.puff(v.base.clone().setY(v.base.y + 0.4), 1.2, PALETTE.dust, 0.8, 0.9);
+        // Battered buildings smoke.
+        if (v.hpF < 0.5 && Math.random() < dt * 0.8) this.effects.puff(v.base.clone().setY(v.base.y + v.height * scale * 0.8), 1.3, PALETTE.smoke, 2.2, 1.8);
+      }
+      if (v.shake > 0) {
+        v.shake = Math.max(0, v.shake - dt * 2.5);
+        const s = v.shake * 0.12 * Math.min(2, v.radius / 3);
+        v.outer.position.x = v.base.x + (Math.random() - 0.5) * s;
+        v.outer.position.z = v.base.z + (Math.random() - 0.5) * s;
       } else {
-        b.outer.position.x = b.base.x;
-        b.outer.position.z = b.base.z;
+        v.outer.position.x = v.base.x;
+        v.outer.position.z = v.base.z;
       }
-      b.outer.position.y = b.floats ? level - 0.35 + Math.sin(performance.now() / 900 + b.base.x) * 0.08 : b.base.y;
+      v.base.y = this.terrain.heightAt(v.base.x, v.base.z);
+      const def = BUILDINGS[v.kind];
+      v.outer.position.y = def.onWater ? v.base.y - 0.2 : def.water && v.base.y < level ? level - 0.3 : v.base.y;
+      this.updateAura(v, night);
     }
-    const grow = (group: Object3D) => {
-      for (const child of [...group.children]) {
-        const g = child.userData.grow as number | undefined;
-        if (g === undefined) continue;
-        if (child.userData.shrink) {
-          const s = Math.max(0, child.scale.x - dt * 1.5);
-          child.scale.setScalar(Math.max(0.001, s));
-          if (s <= 0) child.removeFromParent();
-          continue;
-        }
-        if (g < 1) {
-          const ng = Math.min(1, g + dt * 1.2);
-          child.userData.grow = ng;
-          child.scale.setScalar(Math.max(0.001, MathUtils.smootherstep(ng, 0, 1)));
-        }
-      }
-    };
-    grow(this.world);
-    grow(this.props);
-    for (const child of [...this.tiles.children]) {
-      if (child.userData.sink) {
-        child.position.y -= dt * 0.6;
-        if (child.position.y < -0.5) child.removeFromParent();
-      } else if (child.position.y < 0) {
-        child.position.y = Math.min(0, child.position.y + dt * 0.5);
-      }
+  }
+
+  /** The reach ring of an effect building, and its light after dark. */
+  private updateAura(v: BuildingView, night: boolean): void {
+    const live = v.build >= 1 && auraLive(v.kind, night);
+    if (v.ring) {
+      const r = auraRadius(v.kind, v.level, night);
+      v.ring.visible = live;
+      v.ring.position.set(v.base.x, Math.max(v.base.y, this.waterLevel()) + 0.3, v.base.z);
+      v.ring.scale.setScalar(r);
+      (v.ring.material as MeshBasicMaterial).opacity = 0.22 + Math.sin(performance.now() / 500 + v.id) * 0.08;
     }
+    if (v.glow && v.inner) {
+      const on = live && (night || v.kind === 'zapper');
+      const m = v.glow.material as SpriteMaterial;
+      m.opacity = MathUtils.lerp(m.opacity, on ? (v.kind === 'zapper' ? 0.7 : 0.9) : 0, 0.1);
+      v.glow.visible = m.opacity > 0.02;
+      const top = v.base.y + v.height * v.inner.scale.y * (v.kind === 'campfire' ? 0.6 : 0.92);
+      v.glow.position.set(v.base.x, top, v.base.z);
+      v.glow.scale.setScalar(v.kind === 'campfire' ? 4 : 3 + Math.sin(performance.now() / 120 + v.id) * 0.2);
+    }
+  }
+
+  private pulseLab(): void {
+    const lab = this.labView();
+    if (!lab) return;
+    this.effects.ring(lab.base.clone().setY(lab.base.y + 0.2), 16, PALETTE.beacon[2]);
+    this.effects.ring(lab.base.clone().setY(lab.base.y + 0.2), 9, PALETTE.beacon[1]);
+  }
+
+  private labView(): BuildingView | null {
+    let best: BuildingView | null = null;
+    for (const v of this.buildings.values()) {
+      if (v.state === 'falling' || !BUILDINGS[v.kind].lab) continue;
+      if (!best || v.level > best.level) best = v;
+    }
+    return best;
   }
 
   private updateBeacon(dt: number): void {
-    const beacon = this.beacon;
-    if (!beacon) return;
-    const lab = this.buildings.find((b) => b.lab && !b.retired);
-    const v = this.view;
-    const now = performance.now() / 1000;
+    const game = this.game;
+    if (!this.beacon) {
+      const group = new Group();
+      const mat = new MeshStandardMaterial({ color: PALETTE.beacon[0], emissive: PALETTE.beacon[0], emissiveIntensity: 0.6, flatShading: true });
+      const gem = new Mesh(new OctahedronGeometry(1.1, 0), mat);
+      const ring = new Mesh(new TorusGeometry(2, 0.12, 6, 32), mat);
+      ring.rotation.x = Math.PI / 2;
+      group.add(gem, ring);
+      this.scene.add(group);
+      this.beacon = { group, gem, ring, mat };
+    }
+    const b = this.beacon;
+    const lab = this.labView();
+    const running = !!game && game.running;
+    const r = game ? game.run.research % 1 : 0;
     const c = new Color();
-    const active = !!v && v.outcome === 'running';
-    const r = v?.research ?? 0;
-    if (active) {
-      const [a, b, cc] = PALETTE.beacon;
-      if (r < 0.5) c.set(a).lerp(new Color(b), r / 0.5);
-      else c.set(b).lerp(new Color(cc), (r - 0.5) / 0.5);
-    } else {
-      c.set(PALETTE.beaconIdle);
-    }
-    beacon.mat.color.lerp(c, Math.min(1, dt * 4));
-    beacon.mat.emissive.copy(beacon.mat.color);
-    const speed = active ? 0.8 + r * 3 : 0.2;
-    beacon.gem.rotation.y += dt * speed;
-    beacon.ring.rotation.z -= dt * speed * 0.6;
-    const pulse = active ? 1 + Math.sin(now * (2 + r * 6)) * 0.08 * (0.5 + r) : 1;
-    beacon.group.scale.setScalar(pulse * (lab && lab.state !== 'down' ? 1 : 0.001));
-    if (lab) {
+    const [a, mid, hot] = PALETTE.beacon;
+    if (!running) c.set(PALETTE.beaconIdle);
+    else if (r < 0.5) c.set(a).lerp(new Color(mid), r / 0.5);
+    else c.set(mid).lerp(new Color(hot), (r - 0.5) / 0.5);
+    b.mat.color.lerp(c, Math.min(1, dt * 4));
+    b.mat.emissive.copy(b.mat.color);
+    const speed = running ? 0.8 + r * 3 : 0.2;
+    b.gem.rotation.y += dt * speed;
+    b.ring.rotation.z -= dt * speed * 0.6;
+    b.group.visible = !!lab;
+    if (lab && lab.inner) {
       const h = lab.height * lab.inner.scale.y;
-      beacon.group.position.set(lab.base.x, lab.base.y + h + 3.6 + Math.sin(now * 1.3) * 0.3, lab.base.z);
+      b.group.position.set(lab.base.x, lab.base.y + h + 3 + Math.sin(performance.now() / 770) * 0.3, lab.base.z);
     }
   }
 
-  // ── Navigation ───────────────────────────────────────────────
+  // ── Overlays ─────────────────────────────────────────────────
 
-  private updateNav(): void {
-    if (!this.navDirty || !this.era) return;
-    this.navDirty = false;
-    this.nav.setWater((x, z) => this.terrain.isWater(x, z, -0.85));
-    this.nav.setBridges(BRIDGES.filter((b) => b.era <= this.era!).map((b) => b.rect));
-    this.nav.setBlocked(this.buildings.filter((b) => !b.retired && !b.floats).map((b) => b.footprint));
-  }
-
-  private wanderPoint(from: Vector3, home: Vector3, radius: number, mode: NavMode): Vector3 {
-    const navMode = mode === 'air' ? null : mode;
-    for (let i = 0; i < 14; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const d = Math.sqrt(Math.random()) * radius;
-      const x = MathUtils.clamp(home.x + Math.cos(a) * d, -MAP_HALF + 2, MAP_HALF - 2);
-      const z = MathUtils.clamp(home.z + Math.sin(a) * d, -MAP_HALF + 2, MAP_HALF - 2);
-      if (!navMode) return new Vector3(x, 0, z);
-      if (this.nav.passable(x, z, navMode) && this.nav.clear([from.x, from.z], [x, z], navMode)) return new Vector3(x, 0, z);
+  private iconFor(v: UnitView): IconKind | null {
+    const def = UNITS[v.kind];
+    if (v.dazed) return 'dazed';
+    if (v.task === 'rest') return 'rest';
+    if (v.task === 'heal') return 'heal';
+    if (def.role === 'collect') return v.task === 'collect' || v.task === 'forage' ? 'pollen' : null;
+    if (v.task === 'forage' || v.feeding) {
+      if (def.diet === 'humans' || def.diet === 'animals') return 'meat';
+      return def.side === 'human' && def.role !== 'livestock' ? 'meal' : 'graze';
     }
-    return from.clone();
+    return null;
   }
 
-  private route(from: Vector3, to: Vector3, mode: NavMode): Vector3[] | null {
-    if (mode === 'air') return [to.clone()];
-    const pts = this.nav.path(from.x, from.z, to.x, to.z, mode);
-    if (!pts) return null;
-    return pts.slice(1).map(([x, z]) => new Vector3(x, 0, z));
-  }
-
-  // ── Walkers ──────────────────────────────────────────────────
-
-  private cityHome(): Vector3 {
-    return new Vector3(28, 0, -2);
-  }
-
-  /** Creatures live at their lair. */
-  private syncCreature(id: CreatureId, amount: number): void {
-    const view = VIEWS[id];
-    const cap = this.quality === 'high' ? view.cap : Math.max(1, Math.ceil(view.cap / 2));
-    const want = visibleCount(amount, cap);
-    const list = this.list(id);
-    const alive = list.filter((w) => !w.leaving);
-    if (alive.length < want) {
-      const spot = LAIR_SPOTS[id];
-      const home = new Vector3(spot.x, 0, spot.z);
-      const roam = spot.water ? 9 : Math.max(6, spot.size * 1.4);
-      for (let i = alive.length; i < want; i++) {
-        const at = home.clone().add(new Vector3((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2));
-        const w = new Walker(id, view, this.host, home, roam, at);
-        this.scene.add(w.root);
-        list.push(w);
-        this.lairs.spawn(id);
+  private updateOverlays(): void {
+    this.bars.begin(this.camera);
+    this.icons.begin();
+    for (const v of this.units.values()) {
+      if (!v.ready || v.dying) continue;
+      const s = this.hpOf.get(v.id);
+      if (!s) continue;
+      const p = v.position;
+      const top = p.y + v.height + 0.5;
+      const big = LOOKS[v.kind].size > 3.5;
+      this.bars.stack(p.x, top, p.z, big ? 1.7 : 1.1, 0.13, [
+        { f: s.hp, color: PALETTE.barHp },
+        { f: s.life, color: PALETTE.barLife },
+      ]);
+      const icon = this.iconFor(v);
+      if (icon) {
+        const k = this.bars.scaleAt(p.x, top, p.z);
+        this.icons.show(icon, p.x, top + 0.7 * k + 0.3, p.z, 1.1 * k);
       }
-    } else if (alive.length > want) {
-      for (const w of alive.slice(want)) w.dismiss();
     }
-  }
-
-  /** Humans and their animals live in the city. */
-  private syncCity(id: ViewId, want: number): void {
-    const view = VIEWS[id];
-    const cap = this.quality === 'high' ? view.cap : Math.max(1, Math.ceil(view.cap / 2));
-    want = Math.min(cap, want);
-    const list = this.list(id);
-    const alive = list.filter((w) => !w.leaving);
-    if (alive.length < want) {
-      for (let i = alive.length; i < want; i++) {
-        const home = id === 'scientist' ? this.labHome() : view.human ? this.gateHome(i) : this.cityHome();
-        const w = new Walker(id, view, this.host, home, id === 'scientist' ? 6 : view.human ? 9 : 16, home.clone());
-        this.scene.add(w.root);
-        list.push(w);
-      }
-    } else if (alive.length > want) {
-      for (const w of alive.slice(want)) w.dismiss();
+    for (const v of this.buildings.values()) {
+      if (v.state === 'falling' || !v.inner) continue;
+      const y = v.base.y + v.height * v.inner.scale.y + 0.8;
+      const rows = [{ f: v.hpF, color: PALETTE.barHp }];
+      if (v.build < 1) rows.push({ f: v.build, color: PALETTE.barBuild });
+      this.bars.stack(v.base.x, y, v.base.z, 2.6, 0.2, rows);
     }
+    this.bars.end();
+    this.icons.end();
   }
 
-  private labHome(): Vector3 {
-    const lab = LOTS.find((l) => l.lab)!;
-    return new Vector3(lab.x + 8, 0, lab.z + 6);
-  }
-
-  /** Hunters patrol the city's edges, one gate each. */
-  private gateHome(i: number): Vector3 {
-    const gates = Object.values(RAID_GATES);
-    const [x, z] = gates[i % gates.length]!;
-    return new Vector3(x, 0, z);
-  }
-
-  private list(id: ViewId): Walker[] {
-    let list = this.walkers.get(id);
-    if (!list) {
-      list = [];
-      this.walkers.set(id, list);
-    }
-    return list;
-  }
-
-  private all(ids?: readonly ViewId[]): Walker[] {
-    const out: Walker[] = [];
-    for (const [id, list] of this.walkers) {
-      if (ids && !ids.includes(id)) continue;
-      for (const w of list) if (!w.leaving && w.ready) out.push(w);
-    }
-    return out;
-  }
-
-  /** Hunters go after whatever is being tamed; dogs tag along. */
-  private directHunters(dt: number): void {
-    this.huntClock -= dt;
-    if (this.huntClock > 0 || !this.view) return;
-    this.huntClock = 3;
-    const v = this.view;
-    const hunters = this.all([`hunter-${v.era}` as ViewId]);
-    const prey = this.all(['wolf', 'wildcat', 'boar']).filter((w) => (v.taming[w.id as CreatureId] ?? 0) > 0.02);
-    hunters.forEach((h, i) => {
-      const target = prey.length && i < 2 ? prey[i % prey.length]! : null;
-      h.chase(target ? () => (target.leaving ? null : target.position) : null);
-    });
-    this.all(['dog']).forEach((dog, i) => {
-      const lead = hunters[i % Math.max(1, hunters.length)];
-      dog.chase(lead ? () => (lead.leaving ? null : lead.position) : null);
-    });
-  }
-
-  private scheduleAttacks(dt: number): void {
-    if (!this.view || this.forest || this.view.outcome !== 'running') return;
-    const rate = MathUtils.clamp(0.4 + this.view.intensity * 0.12, 0.4, 3.5);
-    this.attackClock += dt * rate;
-    while (this.attackClock >= 1) {
-      this.attackClock -= 1;
-      const idle = this.all(CREATURE_IDS).filter((w) => !w.busy);
-      if (!idle.length) return;
-      const w = idle[Math.floor(Math.random() * idle.length)]!;
-      const standing = this.standing().filter((b) => !b.floats || w.nav !== 'land');
-      if (!standing.length) continue;
-      // The nearest buildings take the most: the frontier and the outposts in the wild.
-      let best = standing[0]!;
-      let bestD = Infinity;
-      for (const b of standing) {
-        const dist = Math.hypot(b.base.x - w.position.x, b.base.z - w.position.z) * (0.6 + Math.random());
-        if (dist < bestD) {
-          bestD = dist;
-          best = b;
+  private updateBubbles(dt: number): void {
+    const now = performance.now() / 1000;
+    for (const [id, v] of this.bubbles) {
+      const s = v.sprite;
+      const ground = this.terrain.heightAt(v.x, v.z);
+      if (v.pop > 0) {
+        v.pop += dt * 3;
+        s.scale.setScalar(2.4 * (1 + v.pop));
+        (s.material as SpriteMaterial).opacity = Math.max(0, 1 - v.pop);
+        s.position.y += dt * 4;
+        if (v.pop >= 1) {
+          s.removeFromParent();
+          this.bubbles.delete(id);
         }
-      }
-      const b = best;
-      const dir = new Vector2(w.position.x - b.base.x, w.position.z - b.base.z);
-      if (dir.lengthSq() < 0.01) dir.set(1, 0);
-      dir.normalize();
-      const reach = b.radius + VIEWS[w.id].size * 0.35;
-      const point = new Vector3(b.base.x + dir.x * reach, 0, b.base.z + dir.y * reach);
-      w.goAttack({
-        point,
-        top: b.base.y + b.height,
-        onHit: (at) => {
-          const hitAt = new Vector3(b.base.x, b.base.y + Math.min(b.height * 0.6, 4 + Math.random() * b.height * 0.4), b.base.z);
-          hitAt.lerp(at.clone().setY(at.y + 1), 0.45);
-          this.hitBuilding(b, hitAt, Math.min(2.2, 0.5 + VIEWS[w.id].size * 0.06));
-        },
-      });
-    }
-  }
-
-  // ── Raids ────────────────────────────────────────────────────
-
-  private syncRaid(view: SceneView): void {
-    const raid = view.outcome === 'running' ? view.raid : null;
-    if (raid && (!this.party || this.party.done || this.party.target !== raid.target)) this.startParty(raid.target, raid.left);
-    if (!raid && this.party && !this.party.done) this.endParty((view.lairs[this.party.target] ?? 0) > 0);
-  }
-
-  private startParty(target: CreatureId, seconds: number): void {
-    this.endParty(false);
-    const era = this.view?.era ?? 1;
-    const id = `hunter-${era}` as ViewId;
-    const [gx, gz] = RAID_GATES[LAIRS[target].zone];
-    const spot = LAIR_SPOTS[target];
-    const goal = spot.water ? this.shoreNear(spot.x, spot.z) : new Vector3(spot.x, 0, spot.z);
-    const party: Party = { target, walkers: [], done: false };
-    for (let i = 0; i < 3; i++) {
-      const at = new Vector3(gx + (i - 1) * 1.5, 0, gz + (i % 2) * 1.5);
-      const w = new Walker(id, VIEWS[id], this.host, at, 4, at);
-      this.scene.add(w.root);
-      party.walkers.push(w);
-      // March so the party arrives about when the core says it lands.
-      const start = () => {
-        if (party.done) return;
-        const dist = Math.hypot(goal.x - at.x, goal.z - at.z) * 1.25;
-        w.pace = MathUtils.clamp(dist / Math.max(4, seconds - 1) / VIEWS[id].speed, 0.3, 2.5);
-        const off = new Vector3((i - 1) * 1.8, 0, ((i + 1) % 2) * 1.6);
-        w.goTo(goal.clone().add(off), () => {
-          if (!party.done) this.lairs.hit(target);
-        });
-      };
-      setTimeout(start, 700);
-    }
-    this.effects.ring(new Vector3(gx, 0.3, gz), 4, PALETTE.raid);
-    this.party = party;
-  }
-
-  /** The party leaves: it wrecked the lair, or it was driven off. */
-  private endParty(landed: boolean): void {
-    const party = this.party;
-    if (!party || party.done) return;
-    party.done = true;
-    const [gx, gz] = RAID_GATES[LAIRS[party.target].zone];
-    for (const w of party.walkers) {
-      if (!w.ready) {
-        w.dismiss();
         continue;
       }
-      if (!landed) this.effects.puff(w.position.clone().setY(w.position.y + 1.5), 1.6, PALETTE.dust, 1.5, 0.8);
-      w.pace = landed ? 1 : 1.9;
-      if (!w.goTo(new Vector3(gx, 0, gz), () => w.dismiss())) w.dismiss();
-      setTimeout(() => w.dismiss(), 14000);
+      const grow = Math.min(1, s.scale.x / 2.8 + dt * 3);
+      const pulse = 1 + Math.sin(now * 3 + v.phase) * 0.06;
+      s.scale.setScalar(Math.max(0.01, 2.8 * grow * pulse));
+      s.position.set(v.x, ground + 3.2 + Math.sin(now * 1.7 + v.phase) * 0.35, v.z);
+      (s.material as SpriteMaterial).opacity = v.left < 3 ? 0.35 + 0.65 * Math.abs(Math.sin(now * 6)) : 1;
     }
   }
 
-  private shoreNear(x: number, z: number): Vector3 {
-    const p = this.nav.nearest(x, z, 'land', 16);
-    return p ? new Vector3(p[0], 0, p[1]) : new Vector3(x, 0, z);
+  private updateSelection(): void {
+    const v = this.selected !== null ? this.buildings.get(this.selected) : null;
+    this.selectRing.visible = !!v && v.state !== 'falling';
+    if (v) {
+      this.selectRing.position.set(v.base.x, v.base.y + 0.25, v.base.z);
+      const s = v.radius * 1.4 + 0.6 + Math.sin(performance.now() / 300) * 0.1;
+      this.selectRing.scale.setScalar(s);
+      (this.selectRing.material as MeshBasicMaterial).color.set(v.side === 'nature' ? PALETTE.siteOwn : PALETTE.hit);
+    }
   }
 
-  // ── Water ────────────────────────────────────────────────────
+  // ── Light and water ──────────────────────────────────────────
 
   private waterLevel(): number {
-    const v = this.view;
-    if (!v) return -1.2;
-    let level = v.surge ? -0.4 + Math.sin(performance.now() / 260) * 0.1 : v.tide ? -1.8 + v.tideLevel * 1.15 : -1.2;
+    const g = this.game;
+    if (!g) return -1.2;
+    const run = g.run;
+    const surge = g.mods.tide && run.tide.surgeLeft > 0;
+    let level = surge ? -0.4 + Math.sin(performance.now() / 260) * 0.1 : g.mods.tide ? -1.6 + tideLevel(run.tide.clock) * 0.9 : -1.2;
     level = Math.max(level, this.fx.seaLevel());
     return level;
+  }
+
+  /** The sun and moon follow the core's clock: warm noon, orange dusk, a blue but readable night. */
+  private updateLight(dt: number): void {
+    const time = this.game?.run.time ?? 0;
+    const day = daylight(time);
+    const h = hourOf(time);
+    const dusk = Math.max(0, 1 - Math.abs(h - 18.5) / 1.6) + Math.max(0, 1 - Math.abs(h - 6) / 1.4) * 0.7;
+    const sunUp = MathUtils.clamp(Math.sin(((h - 6) / 12) * Math.PI), 0, 1);
+    const az = ((h - 6) / 12) * Math.PI;
+    const r = 140;
+    const above = day > 0.08;
+    const lx = above ? Math.cos(az) * r : -Math.cos(az) * r * 0.6;
+    const ly = above ? 40 + sunUp * 100 : 90;
+    this.sun.position.set(this.target.x + lx, ly, this.target.z + 70);
+    this.sun.target.position.copy(this.target);
+    const sunCol = new Color(PALETTE.sun).lerp(new Color(PALETTE.duskBottom), Math.min(1, dusk * 0.8));
+    const col = sunCol.lerp(new Color(PALETTE.moon), 1 - day);
+    this.sun.color.lerp(col, Math.min(1, dt * 3));
+    this.sun.intensity = MathUtils.damp(this.sun.intensity, 0.7 + 2.0 * day, 3, dt);
+    this.hemi.intensity = MathUtils.damp(this.hemi.intensity, 1.1 + 1.1 * day, 3, dt);
+    this.skyClock -= dt;
+    if (this.skyClock <= 0) {
+      this.skyClock = 0.5;
+      const top = new Color(PALETTE.nightTop).lerp(new Color(PALETTE.skyTop), day).lerp(new Color(PALETTE.duskTop), Math.min(0.6, dusk * 0.5));
+      const bottom = new Color(PALETTE.nightBottom).lerp(new Color(PALETTE.skyBottom), day).lerp(new Color(PALETTE.duskBottom), Math.min(0.7, dusk * 0.6));
+      const key = top.getHexString() + bottom.getHexString();
+      if (key !== this.skyKey) {
+        this.skyKey = key;
+        const old = this.scene.background as CanvasTexture | null;
+        this.scene.background = skyTexture(`#${top.getHexString()}`, `#${bottom.getHexString()}`);
+        old?.dispose();
+      }
+    }
   }
 
   // ── Camera & input ───────────────────────────────────────────
@@ -1051,9 +1023,7 @@ export class CityScene {
       this.target.z + r * sp * Math.cos(this.azimuth) + (Math.random() - 0.5) * shake,
     );
     this.camera.lookAt(this.target);
-    this.sun.position.set(this.target.x + 60, 120, this.target.z + 70);
-    this.sun.target.position.copy(this.target);
-    const span = Math.min(110, (FRAMES[this.frameEra].size / 2) * this.zoom * 1.25 + 10);
+    const span = Math.min(110, (frameOf(this.frameEra).size / 2) * this.zoom * 1.25 + 10);
     const sc = this.sun.shadow.camera;
     if (Math.abs(sc.right - span) > 1) {
       sc.left = -span;
@@ -1104,7 +1074,7 @@ export class CityScene {
       if (this.pointers.size === 2) {
         const [a, b] = [...this.pointers.values()];
         const dist = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        if (this.pinchStart > 0) this.zoom = MathUtils.clamp((this.zoomStart * this.pinchStart) / dist, 0.3, 1.4);
+        if (this.pinchStart > 0) this.zoom = MathUtils.clamp((this.zoomStart * this.pinchStart) / dist, 0.25, 1.4);
         const twist = Math.atan2(b!.y - a!.y, b!.x - a!.x);
         this.azimuthGoal = this.azimuthStart - (twist - this.twistStart);
         this.azimuth = this.azimuthGoal;
@@ -1135,44 +1105,87 @@ export class CityScene {
       'wheel',
       (e) => {
         e.preventDefault();
-        this.zoom = MathUtils.clamp(this.zoom * (1 + e.deltaY * 0.001), 0.3, 1.4);
+        this.zoom = MathUtils.clamp(this.zoom * (1 + e.deltaY * 0.001), 0.25, 1.4);
         this.moved = true;
       },
       { passive: false },
     );
   }
 
-  private tap(clientX: number, clientY: number): void {
-    const rect = this.canvas.getBoundingClientRect();
-    const raid = this.raidScreen();
-    if (raid && Math.hypot(raid.x - (clientX - rect.left), raid.y - (clientY - rect.top)) < RAID_TAP_RADIUS) {
-      this.onTap({ x: clientX, y: clientY, hitBuilding: false, lair: null, raid: true });
-      return;
-    }
-    const hit = this.pick(clientX, clientY);
-    const lair = hit?.lair ?? null;
-    this.onTap({ x: clientX, y: clientY, hitBuilding: !!hit?.building, lair, raid: false });
-    if (hit?.building) this.hitBuilding(hit.building, hit.point, 1.2);
-    else if (hit && !lair) {
-      this.effects.burst(hit.point, 5, 0.5);
-      this.effects.ring(hit.point, 2);
-    }
-  }
-
-  private pick(clientX: number, clientY: number): { point: Vector3; building: Building | null; lair: CreatureId | null } | null {
+  private ray(clientX: number, clientY: number): void {
     const rect = this.canvas.getBoundingClientRect();
     const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
+  }
+
+  private groundPoint(clientX: number, clientY: number): Vector3 | null {
+    this.ray(clientX, clientY);
+    const hit = this.raycaster.intersectObject(this.terrain.group.children[0]!, false)[0];
+    return hit ? hit.point.clone() : null;
+  }
+
+  private tap(clientX: number, clientY: number): void {
+    const rect = this.canvas.getBoundingClientRect();
+    const sx = clientX - rect.left;
+    const sy = clientY - rect.top;
+    if (this.mode === 'place') {
+      const p = this.groundPoint(clientX, clientY);
+      if (p) this.onCell(cellAt(p.x, p.z));
+      return;
+    }
+    if (this.mode === 'rally') {
+      const p = this.groundPoint(clientX, clientY);
+      if (p) {
+        this.effects.ring(p.clone().setY(p.y + 0.2), 3, PALETTE.flag);
+        this.onRally(p.x, p.z);
+      }
+      return;
+    }
+    // Bubbles have generous hit areas: they are the thing to tap.
+    let best: number | null = null;
+    let bestD = 44;
+    for (const [id, v] of this.bubbles) {
+      if (v.pop > 0) continue;
+      const s = this.toScreen(v.sprite.position.x, v.sprite.position.y, v.sprite.position.z);
+      const d = Math.hypot(s.x - sx, s.y - sy);
+      if (d < bestD) {
+        bestD = d;
+        best = id;
+      }
+    }
+    if (best !== null) {
+      this.onBubble(best, clientX, clientY);
+      return;
+    }
+    this.ray(clientX, clientY);
     for (const h of this.raycaster.intersectObjects([this.world], true)) {
       if (h.object.name === 'water') continue;
       let o: Object3D | null = h.object;
-      while (o && !o.userData.building && !o.userData.lair) o = o.parent;
-      const b = (o?.userData.building as Building | undefined) ?? null;
-      if (b && b.state !== 'ok') continue;
-      const lair = Lairs.lairOf(h.object);
-      return { point: h.point.clone(), building: b, lair };
+      while (o && o.userData.building === undefined) o = o.parent;
+      if (o && this.buildings.get(o.userData.building as number)?.state !== 'falling') {
+        this.onBuilding(o.userData.building as number);
+        return;
+      }
+      break;
     }
-    return null;
+    let unit: number | null = null;
+    let unitD = 26;
+    for (const v of this.units.values()) {
+      if (!v.ready || v.dying) continue;
+      const s = this.toScreen(v.position.x, v.position.y + v.height * 0.5, v.position.z);
+      const d = Math.hypot(s.x - sx, s.y - sy);
+      if (d < unitD) {
+        unitD = d;
+        unit = v.id;
+      }
+    }
+    if (unit !== null) {
+      this.onUnit(unit);
+      return;
+    }
+    const p = this.groundPoint(clientX, clientY);
+    if (p) this.effects.ring(p.clone().setY(p.y + 0.15), 1.6, PALETTE.dust);
+    this.onEmpty();
   }
 
   // ── Frame ────────────────────────────────────────────────────
@@ -1183,28 +1196,24 @@ export class CityScene {
     this.lastTime = now;
     this.terrain.update(dt);
     this.decor.update();
-    this.updateNav();
-    this.scheduleAttacks(dt);
-    this.directHunters(dt);
-    for (const list of this.walkers.values()) {
-      for (const w of list) w.update(dt);
-      for (let i = list.length - 1; i >= 0; i--) if (list[i]!.removed) list.splice(i, 1);
+    for (const [id, v] of this.units) {
+      v.update(dt);
+      if (v.removed) this.units.delete(id);
     }
-    if (this.party) {
-      for (const w of this.party.walkers) w.update(dt);
-      this.party.walkers = this.party.walkers.filter((w) => !w.removed);
-      if (this.party.done && !this.party.walkers.length) this.party = null;
-    }
-    if (this.view?.rampage && Math.random() < dt * 4) this.pulse('rampage');
     this.updateBuildings(dt);
     this.updateBeacon(dt);
-    this.lairs.update(dt);
+    this.updateBubbles(dt);
+    this.updateSelection();
     this.fx.update(dt);
-    this.terrain.setWaterLevel(this.waterLevel(), !!this.view?.surge, dt);
+    this.terrain.setWaterLevel(this.waterLevel(), !!this.game && this.game.mods.tide && this.game.run.tide.surgeLeft > 0, dt);
     this.effects.update(dt);
+    this.updateLight(dt);
     this.updateCamera(dt);
+    this.updateOverlays();
+    if (this.flag?.visible) this.flag.rotation.y += dt * 0.6;
     if (this.composer && this.quality === 'high') this.composer.render(dt);
     else this.renderer.render(this.scene, this.camera);
-    void this.gtao;
   }
 }
+
+export type { Unit };

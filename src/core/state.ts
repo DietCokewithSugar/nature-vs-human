@@ -1,16 +1,101 @@
-import { ZERO, type Decimal } from './bignum.ts';
 import { BALANCE } from './config/balance.ts';
-import { CREATURE_IDS } from './config/creatures.ts';
 import { randomSeed } from './rng.ts';
-import type { ActiveId, CreatureId, Difficulty, DisasterId, EraId, RouteId, UnitClass } from './types.ts';
+import type {
+  ActiveId,
+  BuildingId,
+  CreatureId,
+  Difficulty,
+  DisasterId,
+  EraId,
+  Side,
+  UnitClass,
+  UnitId,
+  UnitTask,
+} from './types.ts';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
-export interface CreatureState {
-  /** Units bought with money. Drives cost and milestones. */
-  bought: number;
-  /** Free units (bred or converted). Add output, never cost. */
-  bred: number;
+export interface Unit {
+  id: number;
+  kind: UnitId;
+  side: Side;
+  x: number;
+  z: number;
+  /** Facing (radians around +y, 0 = +z). */
+  dir: number;
+  hp: number;
+  /** Seconds lived, and seconds it will live. */
+  age: number;
+  life: number;
+  /** The building that made it (0 once that is gone). */
+  home: number;
+  task: UnitTask;
+  /** Target entity (unit or building id), or cell for ground work; -1 for none. */
+  target: number;
+  /** Where it is heading. */
+  tx: number;
+  tz: number;
+  /** Seconds until the next hit. */
+  cd: number;
+  /** Seconds since it last dealt or took damage. */
+  calm: number;
+  /** Seconds until it reconsiders what to do. */
+  think: number;
+  /** Personal habits, sampled at birth: hour of day it forages and rests. */
+  forageAt: number;
+  restAt: number;
+  /** The day it last foraged and last rested. */
+  fedDay: number;
+  restDay: number;
+  /** Seconds left of the forage or rest it is doing. */
+  needLeft: number;
+  /** Its last hit was on a meal (wolf on a human, hunter on an animal, ant on a wooden house). */
+  feeding: boolean;
+  /** Last frame it actually landed a hit (for the scene's attack animation). */
+  hitAt: number;
+  /** Drawn in by a lamp or a zapper right now. */
+  dazed: boolean;
+}
+
+export interface Building {
+  id: number;
+  kind: BuildingId;
+  side: Side;
+  cell: number;
+  x: number;
+  z: number;
+  hp: number;
+  /** 1 … 4. */
+  level: number;
+  /** Construction progress, 0 … 1. */
+  build: number;
+  /** Seconds until the next birth. */
+  timer: number;
+  /** Last time something hit it (scene shake). */
+  hitAt: number;
+}
+
+export interface Bubble {
+  id: number;
+  /** Index into NODES. */
+  node: number;
+  value: number;
+  /** Seconds before it fades. */
+  left: number;
+  /** A pollinator has claimed it. */
+  claimed: number;
+}
+
+export interface Countermeasure {
+  cls: UnitClass;
+  era: EraId;
+  at: number;
+}
+
+export interface DisasterState {
+  id: DisasterId;
+  phase: 'warning' | 'active';
+  left: number;
 }
 
 export interface TideState {
@@ -18,69 +103,67 @@ export interface TideState {
   surgeLeft: number;
 }
 
-export interface Countermeasure {
-  cls: UnitClass;
-  era: EraId;
-  /** Run time when it landed. */
-  at: number;
-}
-
-/** A human party marching to wreck a lair. */
-export interface RaidState {
-  target: CreatureId;
-  /** Seconds until it arrives. */
-  left: number;
-  /** Seconds the whole march takes. */
-  total: number;
-}
-
-export interface DisasterState {
-  id: DisasterId;
-  phase: 'warning' | 'active';
-  /** Seconds left in this phase. */
-  left: number;
-  /** Lairs it wrecked when it hit (empty during the warning). */
-  wrecked: CreatureId[];
+export interface RunStats {
+  /** Enemy units killed, and own units lost (in fights, not old age). */
+  kills: number;
+  lost: number;
+  /** Own units that died of old age. */
+  aged: number;
+  built: number;
+  /** Human buildings destroyed, and own buildings lost. */
+  razed: number;
+  wrecked: number;
+  captured: number;
+  bubbles: number;
 }
 
 export interface RunResult {
   won: boolean;
   time: number;
   points: number;
-  earnedLog10: number;
+  /** Nature's share of the open ground at the end, and the best it reached. */
+  territory: number;
+  best: number;
 }
 
 export interface RunState {
-  route: RouteId;
+  route: import('./types.ts').RouteId;
   difficulty: Difficulty;
-  money: Decimal;
-  earned: Decimal;
-  creatures: Record<CreatureId, CreatureState>;
-  upgrades: Record<string, true>;
+  /** 自然之元 in hand, and collected over the run. */
+  essence: number;
+  earned: number;
+  humanEssence: number;
   skills: Record<string, true>;
-  /** Breeding nests for the swarm class. */
-  nests: number;
-  tide: TideState;
   era: EraId;
-  /** Human research meter, 0..1. Reaching 1 loses the run. */
+  /** 0 … 4: each whole step is a human era; 4 means the act passes. */
   research: number;
   countermeasures: Countermeasure[];
-  /** Taming progress per tameable species, 0..1. */
   taming: Partial<Record<CreatureId, number>>;
-  /** Species that defected, with how many units went over. */
+  /** Species that defected, with how many went over. */
   defected: Partial<Record<CreatureId, number>>;
   cooldowns: Partial<Record<ActiveId, number>>;
   rampageLeft: number;
-  /** Wrecked lairs: seconds until each grows back. */
-  lairs: Partial<Record<CreatureId, number>>;
-  /** Fills with research; a raid sets out when it reaches 1. */
-  raidMeter: number;
-  raid: RaidState | null;
+  tide: TideState;
   disaster: DisasterState | null;
-  /** Seconds until the next disaster warning (counts down from BALANCE.disasters.fromEra). */
   nextDisaster: number;
   lastDisaster: DisasterId | null;
-  /** Seeded random state for disasters. */
+  /** Cell control (−100 human … +100 nature) and holder (0 neutral, 1 nature, 2 human). */
+  control: number[];
+  owner: number[];
+  /** Seconds since each cell was last worked by someone. */
+  worked: number[];
+  units: Unit[];
+  buildings: Building[];
+  bubbles: Bubble[];
+  /** Seconds until each resource point wells up again. */
+  nodeTimers: number[];
+  nextId: number;
+  /** Nature's rally flag. */
+  rally: { x: number; z: number } | null;
+  humanThink: number;
+  /** Best share of the open ground nature has held this run. */
+  best: number;
+  stats: RunStats;
   rng: number;
   clicks: number;
   /** Seconds of play in this run. */
@@ -95,8 +178,10 @@ export interface MetaState {
   wins: Record<Difficulty, number>;
   /** Fastest win per difficulty, seconds. */
   fastest: Record<Difficulty, number | null>;
-  lifetime: Decimal;
-  bestRunLog10: number;
+  /** Best territory share ever reached (0 … 1). */
+  bestTerritory: number;
+  /** 自然之元 collected over all runs. */
+  lifetime: number;
   runs: number;
   playTime: number;
 }
@@ -107,13 +192,6 @@ export interface GameState {
   run: RunState;
 }
 
-export function emptyCreatures(): Record<CreatureId, CreatureState> {
-  return Object.fromEntries(CREATURE_IDS.map((id) => [id, { bought: 0, bred: 0 }])) as Record<
-    CreatureId,
-    CreatureState
-  >;
-}
-
 export function createMeta(): MetaState {
   return {
     points: 0,
@@ -121,24 +199,28 @@ export function createMeta(): MetaState {
     levels: {},
     wins: { normal: 0, hard: 0, brutal: 0 },
     fastest: { normal: null, hard: null, brutal: null },
-    lifetime: ZERO,
-    bestRunLog10: 0,
+    bestTerritory: 0,
+    lifetime: 0,
     runs: 0,
     playTime: 0,
   };
 }
 
-export function createRun(route: RouteId = 'beasts', difficulty: Difficulty = 'normal', seed: number = randomSeed()): RunState {
+export function emptyStats(): RunStats {
+  return { kills: 0, lost: 0, aged: 0, built: 0, razed: 0, wrecked: 0, captured: 0, bubbles: 0 };
+}
+
+/**
+ * A bare run: no map yet. Game.startRun lays out the cells, presets and timers (see sim/setup.ts).
+ */
+export function createRun(route: import('./types.ts').RouteId = 'beasts', difficulty: Difficulty = 'normal', seed: number = randomSeed()): RunState {
   return {
     route,
     difficulty,
-    money: ZERO,
-    earned: ZERO,
-    creatures: emptyCreatures(),
-    upgrades: {},
+    essence: BALANCE.economy.natureStart,
+    earned: 0,
+    humanEssence: BALANCE.economy.humanStart,
     skills: {},
-    nests: 0,
-    tide: { clock: 0, surgeLeft: 0 },
     era: 1,
     research: 0,
     countermeasures: [],
@@ -146,12 +228,22 @@ export function createRun(route: RouteId = 'beasts', difficulty: Difficulty = 'n
     defected: {},
     cooldowns: {},
     rampageLeft: 0,
-    lairs: {},
-    raidMeter: 0,
-    raid: null,
+    tide: { clock: 0, surgeLeft: 0 },
     disaster: null,
     nextDisaster: BALANCE.disasters.first,
     lastDisaster: null,
+    control: [],
+    owner: [],
+    worked: [],
+    units: [],
+    buildings: [],
+    bubbles: [],
+    nodeTimers: [],
+    nextId: 1,
+    rally: null,
+    humanThink: 1,
+    best: 0,
+    stats: emptyStats(),
     rng: seed >>> 0,
     clicks: 0,
     time: 0,

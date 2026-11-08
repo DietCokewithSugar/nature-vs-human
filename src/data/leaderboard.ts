@@ -3,12 +3,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Difficulty, GameState } from '../core/index.ts';
 import { loadPlayer, savePlayer } from './storage.ts';
 
-export type BoardKind = 'lifetime' | 'best' | 'fastest';
+export type BoardKind = 'territory' | 'fastest';
 
 export interface LeaderEntry {
   rank: number;
   nickname: string;
-  /** log10 of damage (lifetime or best run), or seconds for the fastest win. */
+  /** Best territory share (percent), or seconds for the fastest win. */
   value: number;
   me: boolean;
 }
@@ -43,7 +43,7 @@ export class Leaderboard {
   private config: { url: string; key: string } | null = null;
   private loading: Promise<SupabaseClient | null> | null = null;
   private sessionReady: Promise<boolean> | null = null;
-  private lastSent = { log10: -1, at: 0, runs: -1 };
+  private lastSent = { best: -1, at: 0, runs: -1 };
 
   constructor(url?: string, anonKey?: string) {
     const player = loadPlayer() ?? { nickname: randomNickname() };
@@ -104,16 +104,16 @@ export class Leaderboard {
   async submit(state: GameState, force = false): Promise<void> {
     if (!this.config) return;
     const meta = state.meta;
-    const log10 = meta.lifetime.gt(0) ? meta.lifetime.log10() : 0;
+    // The best share ever held, counting the run in progress.
+    const best = Math.round(Math.max(meta.bestTerritory, state.run.best) * 1000) / 10;
     const now = Date.now();
-    const changed = log10 - this.lastSent.log10 > 0.005 || meta.runs !== this.lastSent.runs;
+    const changed = best !== this.lastSent.best || meta.runs !== this.lastSent.runs;
     if (!force && (!changed || now - this.lastSent.at < 60_000)) return;
     if (!(await this.ensureSession()) || !this.client) return;
     const fastest = (d: 'normal' | 'hard' | 'brutal') => (meta.fastest[d] === null ? null : Math.floor(meta.fastest[d]!));
-    const { error } = await this.client.rpc('submit_score', {
+    const { error } = await this.client.rpc('submit_territory', {
       p_nickname: this.nickname.value,
-      p_lifetime_log10: log10,
-      p_best_run_log10: meta.bestRunLog10,
+      p_best_territory: best,
       p_play_time_s: Math.floor(meta.playTime),
       p_runs: meta.runs,
       p_wins: meta.wins.normal + meta.wins.hard + meta.wins.brutal,
@@ -125,7 +125,7 @@ export class Leaderboard {
       console.warn('Score submit rejected', error.message);
       return;
     }
-    this.lastSent = { log10, at: now, runs: meta.runs };
+    this.lastSent = { best, at: now, runs: meta.runs };
   }
 
   async setNickname(name: string, state: GameState): Promise<boolean> {
@@ -143,8 +143,8 @@ export class Leaderboard {
     try {
       const { data, error } =
         kind === 'fastest'
-          ? await this.client.rpc('leaderboard_fastest', { p_difficulty: difficulty, p_limit: limit })
-          : await this.client.rpc(kind === 'lifetime' ? 'leaderboard_lifetime' : 'leaderboard_best', { p_limit: limit });
+          ? await this.client.rpc('territory_fastest', { p_difficulty: difficulty, p_limit: limit })
+          : await this.client.rpc('territory_best', { p_limit: limit });
       if (error) throw error;
       const rows = (data ?? []) as { rank: number; nickname: string; value: number; is_me: boolean }[];
       const entries: LeaderEntry[] = rows.map((r) => ({

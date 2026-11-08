@@ -101,7 +101,7 @@
   color: var(--money);
 }
 
-/* A gold coin, the bill's currency. */
+/* 自然之元: a glowing green orb with 元 in the middle. */
 .coin {
   flex: none;
   width: 44px;
@@ -110,21 +110,32 @@
   place-items: center;
   border-radius: 50%;
   border: var(--line-bold) solid var(--ink);
-  background: radial-gradient(circle at 36% 30%, var(--amber-6), var(--amber-9) 62%);
+  background: radial-gradient(circle at 36% 30%, var(--lime-5), var(--lime-9) 58%, var(--grass-10));
   box-shadow:
-    inset 0 -4px 0 var(--amber-10),
-    inset 0 0 0 3px var(--amber-8),
+    inset 0 -4px 0 var(--grass-10),
+    inset 0 0 0 3px var(--lime-8),
     var(--drop-ink);
 }
 
 .coin::before {
-  content: '$';
-  margin-top: -3px;
-  font-family: var(--font-num);
-  font-weight: 700;
-  font-size: 24px;
+  content: '元';
+  margin-top: -2px;
+  font-family: var(--font-display);
+  font-size: 23px;
   line-height: 1;
-  color: var(--amber-11);
+  color: var(--grass-12);
+}
+
+/* The same orb, inline next to a price. */
+.orb {
+  display: inline-block;
+  width: 0.82em;
+  height: 0.82em;
+  margin-right: 0.22em;
+  vertical-align: -0.06em;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: radial-gradient(circle at 36% 30%, var(--lime-5), var(--lime-9) 60%, var(--grass-10));
 }
 
 /* A green gem: gene points. */
@@ -166,7 +177,7 @@
 
 .topbar {
   position: absolute;
-  top: var(--safe-t);
+  top: calc(var(--safe-t) + 22px);
   left: var(--safe-l);
   right: calc(var(--panel-w) + var(--safe-r) + var(--gutter));
   display: grid;
@@ -2630,4 +2641,856 @@ li[data-top='3'] .rank {
 
 .lair-line b {
   color: var(--danger-text);
+}
+
+
+/* ── Sun and moon across the top ─────────────────────────────── */
+
+.skybar {
+  position: absolute;
+  top: calc(var(--safe-t) - 6px);
+  left: var(--safe-l);
+  right: calc(var(--panel-w) + var(--safe-r) + var(--gutter));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 20px;
+  pointer-events: none !important;
+}
+
+.hud[data-layout='sheet'] .skybar {
+  right: var(--safe-r);
+}
+
+.sky-track {
+  position: relative;
+  flex: 1;
+  height: 12px;
+  border: var(--line) solid var(--ink);
+  border-radius: 8px;
+  /* Midnight … dawn … noon … dusk … midnight, hour by hour. */
+  background: linear-gradient(
+    90deg,
+    var(--iris-12) 0%,
+    var(--iris-11) 18%,
+    var(--orange-8) 25%,
+    var(--sky-7) 33%,
+    var(--sky-5) 50%,
+    var(--sky-7) 70%,
+    var(--orange-8) 78%,
+    var(--iris-11) 84%,
+    var(--iris-12) 100%
+  );
+  box-shadow: 0 2px 0 var(--black-a4);
+}
+
+.sky-body {
+  position: absolute;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  margin: -11px 0 0 -11px;
+  border-radius: 50%;
+  border: var(--line) solid var(--ink);
+  background: radial-gradient(circle at 40% 35%, var(--amber-3), var(--amber-9) 70%);
+  box-shadow: 0 0 10px var(--amber-8);
+  transition: left 0.15s linear;
+}
+
+.sky-body[data-night] {
+  background: radial-gradient(circle at 60% 40%, white, var(--sky-4) 55%, var(--iris-6));
+  box-shadow: 0 0 10px var(--sky-6);
+}
+
+.sky-label {
+  flex: none;
+  color: white;
+  -webkit-text-stroke: 3px var(--ink);
+  paint-order: stroke fill;
+  font-weight: 700;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* ── Territory tug of war ────────────────────────────────────── */
+
+.bar-cap.leaf {
+  background: radial-gradient(circle at 36% 30%, var(--lime-6), var(--grass-9) 62%);
+  box-shadow: inset 0 -3px 0 var(--grass-10);
+}
+
+.bar-track.tug {
+  background: repeating-linear-gradient(135deg, var(--olive-7) 0 6px, var(--olive-8) 6px 12px);
+}
+
+.bar-track.tug i {
+  top: 0;
+  bottom: 0;
+  inset-inline: auto;
+  transform: none;
+  transition: width 0.4s ease-out;
+}
+
+.bar-track.tug .tug-nature {
+  left: 0;
+  background: var(--grass-9);
+  box-shadow:
+    inset 0 -4px 0 var(--grass-10),
+    inset 0 3px 0 var(--white-a6);
+}
+
+.bar-track.tug .tug-human {
+  right: 0;
+  background: var(--bronze-9);
+  box-shadow:
+    inset 0 -4px 0 var(--bronze-10),
+    inset 0 3px 0 var(--white-a5);
+}
+
+.bar-track .tug-goal {
+  width: 4px;
+  margin-left: -2px;
+  background: white;
+  border-inline: 1.5px solid var(--ink);
+  opacity: 1;
+}
+
+.bar-track .era-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  opacity: 0.45;
+  text-decoration: none;
+}
+
+.bar[data-kind='research'] .bar-val {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
+}
+
+.bar-note {
+  margin: -2px 0 0 38px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.hud[data-layout='sheet'] .bar-note {
+  margin-left: 32px;
+}
+
+/* ── Placing a building ──────────────────────────────────────── */
+
+.placebar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--sheet-h, 0px) + var(--safe-b) + 76px);
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 24px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: var(--line-bold) solid var(--ink);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: var(--drop);
+  font-size: 13px;
+}
+
+.hud[data-layout='side'] .placebar {
+  left: calc((100vw - var(--panel-w) - var(--safe-r)) / 2);
+  bottom: calc(var(--safe-b) + 84px);
+}
+
+.placebar b {
+  flex: 1 0 100%;
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 18px;
+}
+
+.placebar-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 600;
+}
+
+.placebar-key i {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1.5px solid var(--ink);
+}
+
+.placebar-key i[data-tone='own'] {
+  background: var(--grass-9);
+}
+
+.placebar-key i[data-tone='wild'] {
+  background: var(--amber-9);
+}
+
+.placebar-key i[data-tone='enemy'] {
+  background: var(--violet-9);
+}
+
+.placebar-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.placebar-actions .chunk {
+  height: 40px;
+  padding: 0 14px var(--lift);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.chunk[data-tone='plain'] {
+  --face: var(--card);
+  --side: var(--paper-line-strong);
+  --fg: var(--text);
+}
+
+/* ── Building shop ───────────────────────────────────────────── */
+
+.slots {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 4px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.slots b {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.slots[data-full] b,
+.slots[data-full] span {
+  color: var(--danger-text);
+}
+
+.grid.later {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 2px dashed var(--paper-line-strong);
+}
+
+.build-tile[data-locked] {
+  background: var(--paper-sunken);
+  box-shadow: none;
+}
+
+.build-tile[data-locked] .tile-pic {
+  filter: grayscale(0.8);
+  opacity: 0.7;
+}
+
+.build-tile[data-active] {
+  border-color: var(--grass-9);
+  box-shadow:
+    0 3px 0 var(--grass-10),
+    0 0 0 3px var(--grass-5);
+}
+
+.tile-need {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  padding: 3px 5px;
+  border-radius: 8px;
+  background: var(--sky-9);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.tile-makes {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  display: flex;
+  gap: 2px;
+}
+
+.tile-makes .thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink);
+  background: var(--card);
+}
+
+.tile-lock {
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: calc(var(--r-card) - 5px - var(--line));
+  background: var(--paper-line);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ── Cards: bars, units ──────────────────────────────────────── */
+
+.profile[data-side='nature'] {
+  background: var(--grass-3);
+  box-shadow: inset 0 -5px 0 var(--grass-4);
+}
+
+.profile[data-side='human'] {
+  background: var(--bronze-3);
+  box-shadow: inset 0 -5px 0 var(--bronze-4);
+}
+
+.pips.big {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.pips.big i {
+  width: 12px;
+  height: 12px;
+}
+
+.meters {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.meter {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.meter-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.meter-track {
+  position: relative;
+  height: 14px;
+  border: var(--line) solid var(--ink);
+  border-radius: 8px;
+  background: var(--slate-12);
+  overflow: hidden;
+}
+
+.meter-track i {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: var(--tomato-9);
+  transition: transform 0.25s ease-out;
+}
+
+.meter[data-kind='life'] .meter-track i {
+  background: white;
+}
+
+.meter[data-kind='build'] .meter-track i {
+  background: var(--gold-9);
+}
+
+.meter-val {
+  min-width: 60px;
+  text-align: right;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.fine {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.spawns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spawn {
+  position: relative;
+}
+
+.spawn-share {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.unit-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.unit-pic {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  border: var(--line) solid var(--ink);
+  background: var(--grass-3);
+}
+
+.unit-row[data-side='human'] .unit-pic {
+  background: var(--bronze-3);
+}
+
+.unit-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.unit-name {
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.unit-name small {
+  margin-left: 6px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.unit-stats,
+.unit-habits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.unit-stats span,
+.unit-habits span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--paper-sunken);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.unit-habits span {
+  background: var(--sky-3);
+}
+
+.unit-habits .diet {
+  background: var(--tomato-3);
+  color: var(--tomato-11);
+}
+
+/* ── Tones ───────────────────────────────────────────────────── */
+
+.toast[data-tone='bad'] {
+  border-color: var(--tomato-9);
+}
+
+.toast[data-tone='good'] {
+  border-color: var(--grass-9);
+}
+
+.float[data-tone='essence'] {
+  color: var(--lime-9);
+}
+
+.skill[data-skill='rally'] .skill-face {
+  background: var(--grass-4);
+}
+
+.skill[data-skill='rally'][data-live] .skill-face {
+  background: var(--grass-9);
+}
+
+/* ── Effect buildings and matchups ───────────────────────────── */
+
+.tile-effect {
+  position: absolute;
+  left: 3px;
+  bottom: 3px;
+  padding: 3px 6px;
+  border-radius: 8px;
+  background: var(--jade-9);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.aura-list ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+.aura-list[data-side='nature'] li::marker {
+  color: var(--jade-9);
+}
+
+.aura-list[data-side='human'] li::marker {
+  color: var(--orange-9);
+}
+
+.unit-vs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.unit-vs span {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--amber-3);
+  color: var(--amber-12);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+/* ── Era: badge, steps, title card ───────────────────────────── */
+
+.topleft {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.era-badge {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 14px 11px 5px;
+  border: var(--line-bold) solid var(--ink);
+  border-radius: 18px;
+  background: var(--era-9);
+  color: var(--era-on-9);
+  box-shadow: var(--drop);
+  text-align: left;
+  cursor: pointer;
+}
+
+.era-badge-pic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: var(--line) solid var(--ink);
+  background: var(--era-3);
+}
+
+.era-badge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.era-badge-text b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.era-badge-text small {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.era-badge-bar {
+  position: absolute;
+  left: 57px;
+  right: 14px;
+  bottom: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--black-a4);
+  overflow: hidden;
+}
+
+.era-badge-bar i {
+  display: block;
+  height: 100%;
+  background: white;
+  transform-origin: left center;
+  transition: transform 0.3s ease-out;
+}
+
+/* Four eras under the research bar: past ones ticked off, the current one lit. */
+.era-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin: -2px 50px 0 38px;
+}
+
+.era-steps span {
+  padding: 2px 0;
+  border-radius: 6px;
+  background: var(--paper-sunken);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.era-steps span[data-done] {
+  background: var(--era-4);
+  color: var(--era-11);
+}
+
+.era-steps span[data-on] {
+  background: var(--era-9);
+  color: var(--era-on-9);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.era-steps.big {
+  margin: 6px 0 4px;
+}
+
+.era-steps.big span {
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.hud[data-layout='sheet'] .era-steps {
+  margin: -2px 44px 0 32px;
+}
+
+/* The humans' purse, one line. */
+.human-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 2px 0 0 38px;
+  padding: 3px 8px;
+  border: 1.5px solid var(--paper-line-strong);
+  border-radius: 10px;
+  background: var(--bronze-3);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.human-row small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.human-tag {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bronze-9);
+  color: white;
+}
+
+.hud[data-layout='sheet'] .human-row {
+  margin-left: 32px;
+}
+
+.orb.human {
+  background: radial-gradient(circle at 36% 30%, var(--bronze-5), var(--bronze-9) 60%, var(--bronze-10));
+}
+
+.stats.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.income-list ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.income-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.income-list li b {
+  text-align: right;
+}
+
+.income-list li.warn {
+  background: var(--tomato-3);
+  color: var(--tomato-11);
+}
+
+/* A new era: a title card across the middle of the map, then it fades away. */
+.era-card {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  z-index: 40;
+  width: min(460px, calc(100vw - 32px));
+  padding: 18px 22px 20px;
+  border: var(--line-bold) solid var(--ink);
+  border-radius: var(--r-modal);
+  background: var(--era-9);
+  color: var(--era-on-9);
+  box-shadow: 0 8px 0 var(--black-a5);
+  text-align: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: eraCard 4.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+}
+
+.era-card-pic {
+  width: 84px;
+  height: 84px;
+  margin: -58px auto 4px;
+  border-radius: 22px;
+  border: var(--line-bold) solid var(--ink);
+  background: var(--era-3);
+}
+
+.era-card-name {
+  font-family: var(--font-display);
+  font-size: 46px;
+  line-height: 1.1;
+  color: white;
+  -webkit-text-stroke: 6px var(--ink);
+  paint-order: stroke fill;
+}
+
+.era-card-line {
+  margin-top: 4px;
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+
+.era-card-body {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+@keyframes eraCard {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+  16% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -62%) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .era-card {
+    animation: none;
+  }
+}
+
+.hud[data-layout='sheet'] .topleft {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hud[data-layout='sheet'] .era-badge {
+  grid-template-columns: 32px auto;
+  padding: 4px 10px 9px 4px;
+  border-radius: 14px;
+}
+
+.hud[data-layout='sheet'] .era-badge-pic {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.hud[data-layout='sheet'] .era-badge-text b {
+  font-size: 17px;
+}
+
+.hud[data-layout='sheet'] .era-badge-text small {
+  font-size: 10px;
+}
+
+.hud[data-layout='sheet'] .era-badge-bar {
+  left: 42px;
+  right: 10px;
+  bottom: 4px;
+  height: 4px;
+}
+
+@media (max-width: 520px) {
+  .stats.four {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }

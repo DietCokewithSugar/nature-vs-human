@@ -1,6 +1,7 @@
 /**
  * Dev-only model gallery: every creature view, domestic animal and human in a grid.
- * Open /lab.html with the dev server (/lab.html?set=world for lairs and landmarks). Not part of the production build.
+ * Open /lab.html with the dev server (/lab.html?set=world for lairs and landmarks, ?set=procedural for models built in code).
+ * Not part of the production build.
  * ?anim=Walk plays that clip; ?side shows profiles.
  */
 import {
@@ -28,6 +29,7 @@ const SETS: Record<string, string[]> = {
     'mosquito', 'pigeon', 'octopus', 'shark', 'bison',
     'termite', 'crow', 'tiger', 'rhino', 'elephant',
     'dog', 'cat', 'pig', 'hunter-1', 'hunter-2', 'hunter-3', 'hunter-4', 'scientist',
+    'bee', 'butterfly', 'bat', 'taxi', 'airliner',
   ],
   world: [
     'lair-anthill', 'lair-den', 'lair-cave', 'lair-cave-big', 'lair-glacier',
@@ -37,6 +39,8 @@ const SETS: Record<string, string[]> = {
     'volcano', 'watchtower', 'wind-turbine', 'oil-rig', 'mine-head', 'geothermal',
     'grass-tuft', 'fern', 'wildflowers', 'vines', 'stump', 'fence', 'log-pile',
   ],
+  // Built in code (src/scene/procedural.ts): pollinator homes, effect buildings, the rally flag.
+  procedural: ['teepee', 'teepee-lab', 'hive', 'meadow', 'bat-cave', 'scarecrow', 'dam', 'zapper', 'howl-rock', 'thorns', 'marsh', 'vine-wall', 'flag'],
 };
 const keys = params.get('only')?.split(',') ?? SETS[params.get('set') ?? 'creatures'] ?? SETS.creatures!;
 const cols = Number(params.get('cols') ?? 7);
