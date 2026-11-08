@@ -40,13 +40,16 @@ export const BALANCE = {
     /** How far around itself a unit looks for ground to take, in cells. */
     scan: 9,
     /** Weight of being closer to the humans' capital (per cell of walking distance). */
-    capitalPull: 0.6,
+    capitalPull: 0.9,
     /** Penalty per unit already heading for the same cell. */
     crowd: 0.9,
     /** Bonus for a cell with a human building nature has seen. */
     building: 4,
     /** Seconds between reconsidering the goal. */
     rethink: 3,
+    /** Humans this close to one of nature's buildings (cells) are a threat; units this close to a threat (cells) come to help. */
+    threatRange: 4,
+    defendRange: 16,
   },
 
   flags: {
@@ -78,18 +81,25 @@ export const BALANCE = {
     /** Lodge income grows each stage. */
     incomePerStage: 0.75,
     /** Drying racks the AI keeps at most: base + one per stage. */
-    racks: 1,
+    racks: 0,
     /** The humans improve their tools every `researchPeriod` seconds: +1 level to every unit. */
     researchPeriod: 70,
     /** Every stage starts the humans this many levels higher. */
-    levelsPerStage: 2,
+    levelsPerStage: 1.5,
     /** Main building health grows with the stage, ×growth per stage. */
     mainHpGrowth: 1.3,
     /** The AI thinks this often, seconds. */
     think: 2.5,
     /** Army camps the humans may keep: base + per stage. */
     campsBase: 0,
-    campsPerStage: 1.5,
+    campsPerStage: 1,
+    /** Soldiers gather at home until there are waveBase + wavePerStage × stage of them, then attack together;
+     * they fall back to regroup when fewer than `regroup` are left. */
+    waveBase: 6,
+    wavePerStage: 2,
+    regroup: 2,
+    /** No wave goes out in the first seconds of a stage: nature gets to settle in. */
+    firstWave: 150,
   },
 
   /** Power per level: health and attack ×(1 + per)^(level − 1), for both sides. */

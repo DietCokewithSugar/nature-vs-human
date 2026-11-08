@@ -11,7 +11,7 @@ export const COPY = {
     stage: (n: number) => `第 ${n} 关`,
     camp: (n: number) => (n <= 1 ? '部落营地' : n <= 2 ? '村落' : n <= 3 ? '城镇' : n <= 5 ? '城市' : '大都会'),
     lodge: '人类主城',
-    tools: (lv: number) => `人类工具 Lv${lv}`,
+    tools: (lv: number) => `人类工具 Lv${Math.floor(lv)}`,
     nextTools: (s: number) => `${s} 秒后改良`,
     people: (n: number) => `${n} 人`,
     menu: '菜单',
@@ -188,7 +188,7 @@ export const COPY = {
 
   toast: {
     stage: (n: number, era: string, opened: boolean) => ({ title: `第 ${n} 关 · ${era}`, body: opened ? '地图向外开放了一圈' : '拆掉人类主城就能过关' }),
-    research: (lv: number) => ({ title: `人类改良了工具（Lv${lv}）`, body: '拖得越久，人类越强' }),
+    research: (lv: number) => ({ title: `人类改良了工具（Lv${Math.floor(lv)}）`, body: '拖得越久，人类越强' }),
     starving: (what: string) => ({ title: `${what}在挨饿`, body: '' }),
     lost: (name: string) => ({ title: `${name}被拆了`, body: '地还在，可以再盖' }),
     won: (n: number) => ({ title: `第 ${n} 关胜利！`, body: '' }),

@@ -161,7 +161,7 @@ export class Game {
       }
     }
     run.buildings = run.buildings.filter((b) => b.side === 'nature' && (isMain(b) || !footprintCells(b.kind, b.cell).some((c) => core.has(c))));
-    run.human = { supplies: BALANCE.human.start + BALANCE.human.startPerStage * (stage - 1), food: 10, think: 3, research: 0 };
+    run.human = { supplies: BALANCE.human.start + BALANCE.human.startPerStage * (stage - 1), food: 10, think: 3, research: 0, attacking: false };
     this.reindex();
     const lodge = addBuilding(this.ctx, 'lodge', map.capital, true);
     for (const kind of humanOpening(stage)) {

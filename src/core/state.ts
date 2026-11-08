@@ -50,8 +50,10 @@ export interface Building {
   maxHp: number;
   /** Construction 0 … 1; it works once it reaches 1. */
   progress: number;
-  /** Spawners: seconds towards the next birth. Towers: seconds until the next shot. */
+  /** Spawners: seconds towards the next birth. */
   timer: number;
+  /** Towers (and main buildings that shoot): seconds until the next shot. */
+  shot: number;
   /** Spawners: the food that's holding the next birth back. */
   blocked: Diet | null;
   hitAt: number;
@@ -92,6 +94,8 @@ export interface HumanState {
   think: number;
   /** Research levels gained this stage (one every researchPeriod). */
   research: number;
+  /** The soldiers are out on an attack (they gather at home until the wave is big enough). */
+  attacking: boolean;
 }
 
 export interface RunStats {
@@ -202,7 +206,7 @@ export function createRun(seed = randomSeed()): RunState {
     offer: [],
     rerolls: 0,
     wonAt: null,
-    human: { supplies: 0, food: 0, think: 0, research: 0 },
+    human: { supplies: 0, food: 0, think: 0, research: 0, attacking: false },
     mapSeed: seed >>> 0,
     era: 0,
     control: startControl(seed >>> 0),

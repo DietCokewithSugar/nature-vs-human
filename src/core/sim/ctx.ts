@@ -130,6 +130,7 @@ export function addBuilding(ctx: Ctx, kind: BuildingId, cell: number, done: bool
     maxHp,
     progress: done ? 1 : 0,
     timer: 0,
+    shot: 0,
     blocked: null,
     hitAt: -99,
     seen: def.side === 'nature',

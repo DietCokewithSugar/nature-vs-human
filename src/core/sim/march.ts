@@ -13,21 +13,60 @@ import { mainOf, mapOf, navOf, type Ctx } from './ctx.ts';
  *   with a human building it has seen, and cells fewer of its kind are already heading for. So the
  *   army spreads along the front, pushes the fog back and creeps towards the capital.
  * - Nature, with flags out: head for the nearest flag, then take the ground round it.
+ * - Nature, whatever else: humans at one of its buildings bring every unit close by to help.
  * - Human gatherers: take the nearest ground that isn't the humans', leaning towards nature.
- * - Human soldiers: march on the nearest of nature's buildings.
+ * - Human soldiers: gather at home (or where nature presses them) until the wave is big
+ *   enough, then march on the nearest of nature's buildings together.
  */
 
 /** How many units of each side are heading for each cell (rebuilt every step). */
 export const crowd = { nature: new Int16Array(CELLS), human: new Int16Array(CELLS) };
 /** Cells with a human building nature has seen (rebuilt every step). */
 const seenAt = new Set<number>();
+/** Humans close to one of nature's buildings (rebuilt every step). */
+const threats: Unit[] = [];
+/** Where the humans' soldiers gather: the centre of nature's units on human ground, if any. */
+let press: { x: number; y: number } | null = null;
 
 export function countCrowd(ctx: Ctx): void {
+  const run = ctx.run;
   crowd.nature.fill(0);
   crowd.human.fill(0);
-  for (const u of ctx.run.units) if (u.goal >= 0 && u.hp > 0) crowd[u.side][u.goal]!++;
+  for (const u of run.units) if (u.goal >= 0 && u.hp > 0) crowd[u.side][u.goal]!++;
   seenAt.clear();
-  for (const b of ctx.run.buildings) if (b.side === 'human' && b.seen) seenAt.add(b.cell);
+  for (const b of run.buildings) if (b.side === 'human' && b.seen) seenAt.add(b.cell);
+  threats.length = 0;
+  const reach = BALANCE.march.threatRange * CELL;
+  const mine = run.buildings.filter((b) => b.side === 'nature');
+  let px = 0;
+  let py = 0;
+  let pn = 0;
+  for (const u of run.units) {
+    if (u.hp <= 0) continue;
+    if (u.side === 'human') {
+      if (mine.some((b) => Math.abs(b.x - u.x) < reach && Math.abs(b.y - u.y) < reach && Math.hypot(b.x - u.x, b.y - u.y) < reach)) threats.push(u);
+      continue;
+    }
+    const c = cellAt(u.x, u.y);
+    if (c >= 0 && run.control[c]! <= -BALANCE.territory.flip) {
+      px += u.x;
+      py += u.y;
+      pn++;
+    }
+  }
+  press = pn ? { x: px / pn, y: py / pn } : null;
+  // The wave goes out when big enough and comes home when it's worn down.
+  const h = run.human;
+  let soldiers = 0;
+  for (const u of run.units) if (u.side === 'human' && u.hp > 0 && UNITS[u.kind].special !== 'gather') soldiers++;
+  const H = BALANCE.human;
+  if (!h.attacking && run.stageTime >= H.firstWave && soldiers >= H.waveBase + H.wavePerStage * run.stage) {
+    h.attacking = true;
+    for (const u of run.units) if (u.side === 'human') u.rethink = 0;
+  } else if (h.attacking && soldiers < H.regroup) {
+    h.attacking = false;
+    for (const u of run.units) if (u.side === 'human') u.rethink = 0;
+  }
 }
 
 function scan(cx0: number, cy0: number, r: number, fn: (i: number, d: number) => void): void {
@@ -56,6 +95,7 @@ export function goalDone(ctx: Ctx, u: Unit): boolean {
   // Taking ground: done once it's nature's (and has been seen).
   if (u.side === 'nature') return run.control[u.goal]! >= flip && run.explored[u.goal] === 1;
   if (UNITS[u.kind].special === 'gather') return run.control[u.goal]! <= -flip;
+  // Soldiers: think again when the wave goes out or comes back.
   return false;
 }
 
@@ -71,6 +111,21 @@ function natureGoal(ctx: Ctx, u: Unit): number {
   const crowdN = crowd.nature;
   // Don't count itself in the crowd at its current goal.
   if (u.goal >= 0) crowdN[u.goal]!--;
+
+  // Humans at one of nature's buildings: everyone close by comes to help.
+  let threat: Unit | null = null;
+  let td = BALANCE.march.defendRange * CELL;
+  for (const t of threats) {
+    const d = Math.hypot(t.x - u.x, t.y - u.y);
+    if (d < td) {
+      td = d;
+      threat = t;
+    }
+  }
+  if (threat) {
+    const c = cellAt(threat.x, threat.y);
+    if (nav.passable(c)) return c;
+  }
 
   if (run.flags.length) {
     let flag = run.flags[0]!;
@@ -148,6 +203,15 @@ function gathererGoal(ctx: Ctx, u: Unit): number {
 
 function soldierGoal(ctx: Ctx, u: Unit): number {
   const run = ctx.run;
+  if (!run.human.attacking) {
+    // Gather: where nature presses the humans' land, or at home.
+    if (press) {
+      const c = cellAt(press.x, press.y);
+      if (navOf(run).passable(c)) return c;
+    }
+    const home = ctx.byId.get(u.home) ?? mainOf(run, 'human');
+    return home && 'cell' in home ? home.cell : cellAt(u.x, u.y);
+  }
   let best = -1;
   let bestD = Infinity;
   for (const b of run.buildings) {

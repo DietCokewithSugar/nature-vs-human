@@ -248,8 +248,8 @@ export function stepTowers(ctx: Ctx, dt: number): void {
     const tower = BUILDINGS[b.kind].tower;
     if (!tower || b.progress < 1 || b.hp <= 0) continue;
     if (b.side === 'human' && ctx.run.wonAt !== null) continue;
-    b.timer -= dt;
-    if (b.timer > 0) continue;
+    b.shot -= dt;
+    if (b.shot > 0) continue;
     let best: Unit | null = null;
     let bestD = Infinity;
     for (const v of ctx.run.units) {
@@ -261,10 +261,10 @@ export function stepTowers(ctx: Ctx, dt: number): void {
       }
     }
     if (!best) {
-      b.timer = 0.2;
+      b.shot = 0.2;
       continue;
     }
-    b.timer = tower.interval;
+    b.shot = tower.interval;
     shoot(ctx, b.side, tower.projectile, b.kind, b.x, b.y - 18, best, towerDmg(b.kind, ctx.run, ctx.mods), null);
   }
 }
