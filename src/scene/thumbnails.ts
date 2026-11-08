@@ -13,6 +13,7 @@ import {
   type SkinnedMesh,
 } from 'three';
 import { instantiate } from './assets.ts';
+import { LOOKS } from './creatures.ts';
 import { PALETTE } from './palette.ts';
 
 const SIZE = 192;
@@ -62,7 +63,9 @@ function worldVertices(root: Object3D): Vector3[] {
 }
 
 async function render(model: string, opts: ThumbOptions): Promise<string> {
-  const prep = await instantiate(model, 2);
+  // Unit ids stand for their body model.
+  const key = model in LOOKS ? LOOKS[model as keyof typeof LOOKS].model : model;
+  const prep = await instantiate(key, 2);
   const scene = new Scene();
   scene.add(new HemisphereLight(PALETTE.hemiSky, PALETTE.hemiGround, 2.4));
   const sun = new DirectionalLight(PALETTE.sun, 2.4);

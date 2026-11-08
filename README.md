@@ -23,7 +23,7 @@
 | 升级 | 每座最多升 3 次（1 → 4 级）：生得更快、在外的上限更高、3 级起一次生两只、外壳更厚。**建筑不能修复**，升级只加新的那部分血量 |
 | 领地 | 每块地有一个 −100（人类）到 +100（自然）的控制值，越过 ±50 换主人。动物站在人类地块上会把它啃回来，人类的开荒单位也在反方向推；有建筑的地块要先把建筑拆了才能翻。没人动的地块会慢慢回到原主人手里 |
 | 集结旗 | 点技能栏的旗子再点地图，动物会优先往那边打 |
-| 单位 | 自动行动。血条红、寿命条白；脱战 6 秒后回血，休息、觅食时回得更快。血量归零战死；寿命条走完就老死，人类和动物所有单位都一样 |
+| 单位 | 自动行动。受伤时头顶出现血条（自然方绿色、人类方红色），快老死时多一条白色寿命条；脱战 6 秒后回血，休息、觅食时回得更快。血量归零战死；寿命条走完就老死，人类和动物所有单位都一样 |
 | 昼夜与作息 | 一天 4 分钟，开局早上 6 点。每个物种有觅食和休息的习惯时段，每个个体出生时按正态分布抽自己的时间（狼大多夜里出来，但也有白天觅食的；原始人全天都有人打猎；现代上班族朝九晚六，夜里很少出门）。觅食和休息不会同时进行，头上会显示状态图标 |
 | 以战代食 | 狼、剑齿虎、老虎、鳄鱼、鲨鱼、蚊子咬人类，猎人、猎枪手、狗打动物，蚂蚁、白蚁啃木头房子，蝗虫、老鼠、野猪啃农田：这些都算觅食，打的同时回血 |
 | 时代提示 | 左上角的时代牌一直显示当前时代、下一个时代和还差多少研究；研究条下面标出四个时代，走过的打勾、当前的点亮；进入新时代（包括开局）屏幕中间会弹出时代标题卡，说明这个时代变了什么 |
@@ -287,6 +287,7 @@ npm run dev          # http://localhost:5173
 npm test             # 逻辑核心 + 排行榜 SQL 测试
 npm run sim          # 三种机器人各打一局，看胜负和用时
 npm run report       # 多个种子跑完整局，重新生成 docs/balance.md
+npm run sprites      # 把模型烘焙成像素精灵图集 public/sprites/（见下面"画面"）
 npm run models       # 用 Blender 重新生成自制模型（见下面"素材"）
 npm run build        # 类型检查 + 打包到 dist/
 ```
@@ -300,7 +301,8 @@ npm run build        # 类型检查 + 打包到 dist/
 | 层 | 目录 | 内容 |
 |---|---|---|
 | 外壳 | `src/shell/` | 启动、20 Hz 循环、自动存档。以后加 Steam（Electron/Tauri）和手机（Capacitor）外壳，只换这一层 |
-| 表现层 | `src/scene/`、`src/ui/`、`src/styles/` | three.js 地图和 Preact 界面，只读状态、发指令。`scene/terrain.ts` 按地块画地形和领地，`decor.ts` 按领地摆树和花，`city.ts` 画建筑、单位、泡泡、血条和昼夜，`marks.ts` 是血条、寿命条和头顶图标 |
+| 表现层 | `src/pixel/`、`src/ui/`、`src/styles/` | 像素地图（PixiJS）和 Preact 界面，只读状态、发指令。`pixel/ground.ts` 逐像素画地面和领地，`decor.ts` 按领地摆树和花，`scene.ts` 画建筑、单位、泡泡、血条、昼夜和镜头，`fx.ts` 是粒子和灾难，`marks.ts` 是头顶图标 |
+| 旧 3D 表现层 | `src/scene/` | 原来的 three.js 地图，接口和像素版一样。设置里「画面 → 3D」或网址加 `?r=3d` 切换，只有这时才加载 three.js |
 | 逻辑核心 | `src/core/` | 纯 TypeScript，可以在 Node 里直接跑。`map/` 是固定地图和寻路，`sim/` 是模拟：领地、单位 AI 与战斗、作息、建筑生产、效果建筑、人类 AI、研究、驯化、灾难 |
 | 数据 | `src/core/config/`、`src/data/`、`supabase/` | 配置表、本地存档与迁移、排行榜 |
 
@@ -310,7 +312,7 @@ npm run build        # 类型检查 + 打包到 dist/
 - 地图在 `src/core/map/grid.ts`：上面那张字符图就是源码，改字符就改地图。
 - 模拟用固定步长（0.1 秒）和带种子的随机数，同一个种子打出来的局一模一样，测试和平衡报告都靠这一点。
 - 所有界面文案在 `src/ui/copy.ts`，方便统一审稿和以后翻译。
-- 所有颜色来自 [Radix Colors](https://www.radix-ui.com/colors)（只用浅色主题），语义变量在 `src/styles/tokens.css`，场景颜色在 `src/scene/palette.ts`。
+- 界面颜色来自 [Radix Colors](https://www.radix-ui.com/colors)（只用浅色主题），语义变量在 `src/styles/tokens.css`。地图上的每个像素只用 Resurrect 64 调色板（`src/pixel/palette.ts`），旧 3D 场景的颜色在 `src/scene/palette.ts`。
 - 嵌套圆角按"外圆角 − 内边距 = 内圆角"计算，变量也在 `tokens.css`。
 
 ## 数值
@@ -334,7 +336,18 @@ npm run build        # 类型检查 + 打包到 dist/
 2. 填 `VITE_SUPABASE_URL` 和 `VITE_SUPABASE_ANON_KEY`。
 3. 部署。Vite 在构建时写入这两个变量，修改后要重新部署才会生效。
 
-模型文件通过 Render 的 CDN 分发，带缓存头。
+模型文件和像素图集通过 Render 的 CDN 分发，带缓存头。
+
+## 画面
+
+地图是 16-bit 风格的俯视像素画：一格 16 像素，统一用 Resurrect 64 调色板、左上方光源、1 像素深色描边。完整规范在 [docs/art-style.md](docs/art-style.md)，新素材按它做就能和现有的对上。
+
+- **动物、建筑、树和道具**：`npm run sprites` 用固定的正交相机把 3D 模型渲染成像素图（4 倍超采样 → 缩小 → 三档明暗 → 吸附调色板 → 去杂点 → 描边），打包成 `public/sprites/atlas.png` 和 `atlas.json`（PixiJS / TexturePacker 通用格式）。需要 Playwright 的 Chromium。
+- **人**：太小，3D 缩下来只是一团，所以按像素游戏的常规做法用代码画：同一个 Q 版身体模板，换各职业的衣服颜色、帽子和工具（`src/bake/people.ts`）。
+- **地面**：运行时逐像素生成（`src/pixel/ground.ts`），地块边缘用噪声错开，被争夺的地块按控制值把两边的地面抖动混合。
+- **手绘、AI 生成或下载的素材**：放进 `art/sprites/<精灵 key>/move0.png` 这样的位置，再跑一次 `npm run sprites`，会替换烘焙的那一份，同样吸附调色板、自动补描边。见 [art/sprites/README.md](art/sprites/README.md)。
+- 开发服务器上打开 `/bake.html`：看烘焙出来的整张图集；`/bake.html?only=unit/wolf,building/tent`：只烘焙几个。
+- 手机上默认放大到一屏约 13 格宽，双指缩小可以看全图；缩放只停在整数倍，像素不会糊。
 
 ## 素材
 
@@ -346,7 +359,8 @@ npm run build        # 类型检查 + 打包到 dist/
 - `npm run assets`：按 `scripts/assets.manifest.json` 下载模型并用 meshopt 压缩，同时重新生成署名文件。
 - 老窝、火山、人类前哨站和地图上的小道具是项目自制的，由 `tools/blender/models.py` 用 Blender 的 Python 模块生成，风格对齐 Polyfork：单一材质、顶点色、平直着色。重新生成需要先安装 Blender：`pip install bpy==5.2.3`（Python 3.13），然后运行 `npm run models`。如果 bpy 装在别的 Python 里，用 `BLENDER_PYTHON=/path/to/python npm run models`。
 - 开发服务器上打开 `/lab.html?set=world`：自制模型的陈列页；`/lab.html`：生物模型陈列页（不会打进生产包）。
-- 生物和建筑图标由 three.js 在运行时从模型渲染；音效用 Web Audio 合成，没有音频文件。
+- 界面里的生物和建筑图标直接取自像素图集（3D 画面下由 three.js 从模型渲染）；音效用 Web Audio 合成，没有音频文件。
+- 调色板：[Resurrect 64](https://lospec.com/palette-list/resurrect-64)，作者 Kerrie Lake。
 
 ## 后续
 
