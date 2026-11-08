@@ -21,9 +21,9 @@ import {
 } from './sim/buildings.ts';
 import { rand, type Ctx } from './sim/ctx.ts';
 import { stepDisaster } from './sim/disasters.ts';
-import { collectBubble, humanIncome, natureIncome, stepEconomy } from './sim/economy.ts';
+import { collectBubble, humanIncome, humanIncomeParts, natureIncome, stepEconomy } from './sim/economy.ts';
 import type { CoreEvent } from './sim/events.ts';
-import { addTaming, researchRate, stepHumanAI, stepResearch } from './sim/humans.ts';
+import { addTaming, researchParts, researchRate, stepHumanAI, stepResearch } from './sim/humans.ts';
 import { buildingCap, buildingCost, buildingCount, buildingMaxHp, unitMaxHp, upgradeCost } from './sim/stats.ts';
 import { initCells, natureShare, stepTerritory } from './sim/territory.ts';
 import { advanceTide } from './sim/tide.ts';
@@ -391,6 +391,19 @@ export class Game {
 
   humanIncome(): number {
     return humanIncome(this.run, this.world);
+  }
+
+  /** The humans' side at a glance: their 自然之元, where it comes from, what they field, how their research goes. */
+  humanReport() {
+    const run = this.run;
+    return {
+      essence: run.humanEssence,
+      income: humanIncomeParts(run, this.world),
+      buildings: buildingCount(run, 'human'),
+      cap: buildingCap(this.world, this.mods, 'human'),
+      pop: this.world.pop.human,
+      research: researchParts(run, this.world, this.mods),
+    };
   }
 
   researchRate(): number {

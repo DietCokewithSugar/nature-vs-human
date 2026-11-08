@@ -3185,3 +3185,312 @@ li[data-top='3'] .rank {
   font-weight: 700;
   line-height: 1.4;
 }
+
+/* ── Era: badge, steps, title card ───────────────────────────── */
+
+.topleft {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.era-badge {
+  position: relative;
+  display: grid;
+  grid-template-columns: 44px auto;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 14px 11px 5px;
+  border: var(--line-bold) solid var(--ink);
+  border-radius: 18px;
+  background: var(--era-9);
+  color: var(--era-on-9);
+  box-shadow: var(--drop);
+  text-align: left;
+  cursor: pointer;
+}
+
+.era-badge-pic {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: var(--line) solid var(--ink);
+  background: var(--era-3);
+}
+
+.era-badge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.era-badge-text b {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 22px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.era-badge-text small {
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+.era-badge-bar {
+  position: absolute;
+  left: 57px;
+  right: 14px;
+  bottom: 5px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--black-a4);
+  overflow: hidden;
+}
+
+.era-badge-bar i {
+  display: block;
+  height: 100%;
+  background: white;
+  transform-origin: left center;
+  transition: transform 0.3s ease-out;
+}
+
+/* Four eras under the research bar: past ones ticked off, the current one lit. */
+.era-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3px;
+  margin: -2px 50px 0 38px;
+}
+
+.era-steps span {
+  padding: 2px 0;
+  border-radius: 6px;
+  background: var(--paper-sunken);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.era-steps span[data-done] {
+  background: var(--era-4);
+  color: var(--era-11);
+}
+
+.era-steps span[data-on] {
+  background: var(--era-9);
+  color: var(--era-on-9);
+  box-shadow: 0 0 0 1.5px var(--ink);
+}
+
+.era-steps.big {
+  margin: 6px 0 4px;
+}
+
+.era-steps.big span {
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.hud[data-layout='sheet'] .era-steps {
+  margin: -2px 44px 0 32px;
+}
+
+/* The humans' purse, one line. */
+.human-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  margin: 2px 0 0 38px;
+  padding: 3px 8px;
+  border: 1.5px solid var(--paper-line-strong);
+  border-radius: 10px;
+  background: var(--bronze-3);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.human-row small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.human-tag {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--bronze-9);
+  color: white;
+}
+
+.hud[data-layout='sheet'] .human-row {
+  margin-left: 32px;
+}
+
+.orb.human {
+  background: radial-gradient(circle at 36% 30%, var(--bronze-5), var(--bronze-9) 60%, var(--bronze-10));
+}
+
+.stats.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.income-list ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.income-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 5px 8px;
+  border-radius: 8px;
+  background: var(--paper);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.income-list li b {
+  text-align: right;
+}
+
+.income-list li.warn {
+  background: var(--tomato-3);
+  color: var(--tomato-11);
+}
+
+/* A new era: a title card across the middle of the map, then it fades away. */
+.era-card {
+  position: fixed;
+  left: 50%;
+  top: 42%;
+  z-index: 40;
+  width: min(460px, calc(100vw - 32px));
+  padding: 18px 22px 20px;
+  border: var(--line-bold) solid var(--ink);
+  border-radius: var(--r-modal);
+  background: var(--era-9);
+  color: var(--era-on-9);
+  box-shadow: 0 8px 0 var(--black-a5);
+  text-align: center;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation: eraCard 4.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+}
+
+.era-card-pic {
+  width: 84px;
+  height: 84px;
+  margin: -58px auto 4px;
+  border-radius: 22px;
+  border: var(--line-bold) solid var(--ink);
+  background: var(--era-3);
+}
+
+.era-card-name {
+  font-family: var(--font-display);
+  font-size: 46px;
+  line-height: 1.1;
+  color: white;
+  -webkit-text-stroke: 6px var(--ink);
+  paint-order: stroke fill;
+}
+
+.era-card-line {
+  margin-top: 4px;
+  font-family: var(--font-display);
+  font-size: 20px;
+}
+
+.era-card-body {
+  margin: 8px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+@keyframes eraCard {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.6);
+  }
+  10% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.04);
+  }
+  16% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  82% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -62%) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .era-card {
+    animation: none;
+  }
+}
+
+.hud[data-layout='sheet'] .topleft {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hud[data-layout='sheet'] .era-badge {
+  grid-template-columns: 32px auto;
+  padding: 4px 10px 9px 4px;
+  border-radius: 14px;
+}
+
+.hud[data-layout='sheet'] .era-badge-pic {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+}
+
+.hud[data-layout='sheet'] .era-badge-text b {
+  font-size: 17px;
+}
+
+.hud[data-layout='sheet'] .era-badge-text small {
+  font-size: 10px;
+}
+
+.hud[data-layout='sheet'] .era-badge-bar {
+  left: 42px;
+  right: 10px;
+  bottom: 4px;
+  height: 4px;
+}
+
+@media (max-width: 520px) {
+  .stats.four {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

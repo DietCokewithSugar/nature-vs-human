@@ -27,7 +27,9 @@ import { LOOKS } from '../scene/creatures.ts';
 import { CloseButton, Essence, Meter, Segmented, Thumb } from './common.tsx';
 import { COPY } from './copy.ts';
 import { describeAura, describeEffects, describeMatchups, shortSeconds } from './describe.ts';
-import { app, detail, detailKind, flash, floats, frame, modal, pushToast, sheet, tab, toasts, viewInsets } from './store.ts';
+import { app, detail, detailKind, eraCard, flash, floats, frame, modal, pushToast, sheet, tab, toasts, viewInsets } from './store.ts';
+import { ERA_MODEL } from './hud.tsx';
+import { eraName } from './copy.ts';
 
 export function Toasts() {
   const ins = viewInsets.value;
@@ -52,6 +54,21 @@ export function Floats() {
           {f.text}
         </span>
       ))}
+    </div>
+  );
+}
+
+/** A new era: its name across the middle of the screen, what changed, then it fades. */
+export function EraCard() {
+  const c = eraCard.value;
+  if (!c) return null;
+  const card = COPY.era.card[c.era];
+  return (
+    <div class="era-card" key={c.id} data-era={c.era} role="status" aria-live="assertive">
+      <Thumb {...ERA_MODEL[c.era]} class="era-card-pic" />
+      <div class="era-card-name">{COPY.era.full[c.era]}</div>
+      <div class="era-card-line">{card.line}</div>
+      <p class="era-card-body">{card.body}</p>
     </div>
   );
 }
@@ -112,6 +129,8 @@ export function Modals() {
       return <UnitModal />;
     case 'kind':
       return <KindModal />;
+    case 'humans':
+      return <HumansModal />;
     default:
       return null;
   }
@@ -424,6 +443,104 @@ function KindModal() {
       )}
       <AuraList def={def} />
       <SpawnList def={def} />
+    </Modal>
+  );
+}
+
+// ── The humans' side ────────────────────────────────────────────
+
+/** What the humans have, where their 自然之元 comes from, and how their research is going. */
+function HumansModal() {
+  frame.value;
+  const g = app.game;
+  const h = g.humanReport();
+  const run = g.run;
+  const H = COPY.humans;
+  const inc = h.income;
+  const n = (v: number) => formatNumber(Math.round(v * 100) / 100);
+  const r = h.research;
+  const perMinute = ((r.rate * 60) * 100).toFixed(1).replace(/\.0$/, '');
+  const minutes = Number.isFinite(r.eta) ? Math.max(1, Math.round(r.eta / 60)) : null;
+  const sources: [string, number][] = [
+    [H.base(eraName(run.era)), inc.base],
+    [H.land(inc.cells), inc.land],
+    [H.nodes(inc.nodeCount), inc.nodes],
+    [H.buildingsIncome, inc.buildings],
+    [H.animals, inc.animals],
+  ];
+  return (
+    <Modal title={H.title} kind="humans">
+      <dl class="card stats four">
+        <div>
+          <dt>{H.essence}</dt>
+          <dd class="num">{formatNumber(Math.floor(h.essence))}</dd>
+        </div>
+        <div>
+          <dt>{H.income}</dt>
+          <dd class="num">+{n(inc.total)}</dd>
+        </div>
+        <div>
+          <dt>{H.buildings}</dt>
+          <dd class="num">
+            {h.buildings}/{h.cap}
+          </dd>
+        </div>
+        <div>
+          <dt>{H.pop}</dt>
+          <dd class="num">{h.pop}</dd>
+        </div>
+      </dl>
+      <div class="card income-list">
+        <div class="section-label">{H.sources}</div>
+        <ul>
+          {sources
+            .filter(([, v]) => v > 0)
+            .map(([label, v]) => (
+              <li key={label}>
+                <span>{label}</span>
+                <b class="num">+{n(v)}</b>
+              </li>
+            ))}
+          {inc.difficulty !== 1 && (
+            <li>
+              <span>{H.difficulty(inc.difficulty)}</span>
+            </li>
+          )}
+          {inc.panic > 1.001 && (
+            <li>
+              <span>{H.panic(Math.round(inc.panic * 100) / 100)}</span>
+            </li>
+          )}
+        </ul>
+      </div>
+      <div class="card income-list">
+        <div class="section-label">{H.research}</div>
+        <div class="era-steps big" aria-hidden="true">
+          {([1, 2, 3, 4] as const).map((e) => (
+            <span key={e} data-era={e} data-on={e === run.era || undefined} data-done={e < run.era || undefined}>
+              {COPY.era.full[e]}
+            </span>
+          ))}
+        </div>
+        <ul>
+          <li>
+            <span>{H.rate(perMinute)}</span>
+            <b>{minutes === null ? H.stalled : run.era < 4 ? H.eta(minutes, COPY.era.full[(run.era + 1) as 2 | 3 | 4]) : H.etaLast(minutes)}</b>
+          </li>
+          <li>
+            <span>{H.drivers(r.labLevels, r.scholars)}</span>
+          </li>
+          <li>
+            <span>{H.pressure((Math.round(r.pressure * 100) / 100).toString())}</span>
+          </li>
+          {r.rush && (
+            <li class="warn">
+              <span>{H.rush}</span>
+            </li>
+          )}
+        </ul>
+      </div>
+      <p class="fine">{H.explain}</p>
     </Modal>
   );
 }

@@ -67,8 +67,33 @@ export function Counter() {
   );
 }
 
-/** A landmark from each era, used for the "back to the whole map" button. */
-const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
+/**
+ * Which era the humans are in, big and coloured, with how far their research is to the next one.
+ * Tapping it opens the humans' side.
+ */
+export function EraBadge() {
+  frame.value;
+  const run = app.game.run;
+  const era = run.era;
+  const stage = Math.min(3, Math.floor(run.research));
+  const pct = Math.floor((run.research >= 4 ? 1 : run.research - stage) * 100);
+  const sub = era < 4 ? COPY.era.next(COPY.era.full[(era + 1) as EraId], pct) : COPY.era.last(pct);
+  return (
+    <button type="button" class="era-badge" data-era={era} onClick={() => (modal.value = 'humans')} aria-label={`${COPY.era.full[era]}，${sub}`}>
+      <Thumb {...ERA_MODEL[era]} class="era-badge-pic" />
+      <span class="era-badge-text">
+        <b>{COPY.era.full[era]}</b>
+        <small>{sub}</small>
+      </span>
+      <span class="era-badge-bar" aria-hidden="true">
+        <i style={{ transform: `scaleX(${Math.max(0.02, pct / 100)})` }} />
+      </span>
+    </button>
+  );
+}
+
+/** A landmark from each era, used for the era badge and the "back to the whole map" button. */
+export const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
   1: { model: 'teepee' },
   2: { model: 'temple' },
   3: { model: 'loft', crop: 0.7 },
@@ -198,11 +223,17 @@ export function RunBar() {
               <b key={i} data-cls={cm.cls} title={`${countermeasureName(cm.cls, cm.era)} · ${CLASSES[cm.cls].name}`} style={{ left: `${(i + 0.5) * 25}%` }} />
             ))}
           </span>
-          <span class="bar-val num" data-era={run.era}>
-            {eraName(run.era)}
-          </span>
+          <span class="bar-val num">{Math.floor(within * 100)}%</span>
+        </div>
+        <div class="era-steps" aria-hidden="true">
+          {([1, 2, 3, 4] as EraId[]).map((e) => (
+            <span key={e} data-era={e} data-on={e === run.era || undefined} data-done={e < run.era || undefined}>
+              {eraName(e)}
+            </span>
+          ))}
         </div>
         <div class="bar-note">{rush ? COPY.run.rush : run.era === 4 ? COPY.run.goalNow : COPY.run.goal}</div>
+        <HumanRow />
       </div>
       {taming.length > 0 && (
         <div class="tames">
@@ -218,6 +249,32 @@ export function RunBar() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The humans' purse in one line: what they have, what they earn, what they field. Tap for details. */
+function HumanRow() {
+  frame.value;
+  const h = app.game.humanReport();
+  return (
+    <button type="button" class="human-row" onClick={() => (modal.value = 'humans')}>
+      <span class="human-tag">{COPY.humans.label}</span>
+      <span class="num">
+        <span class="orb human" aria-hidden="true" />
+        {formatNumber(Math.floor(h.essence))}
+        <small>
+          {' '}
+          +{formatNumber(Math.round(h.income.total * 10) / 10)}
+          {COPY.perSecond}
+        </small>
+      </span>
+      <span class="num">
+        {COPY.humans.buildings} {h.buildings}/{h.cap}
+      </span>
+      <span class="num">
+        {COPY.humans.pop} {h.pop}
+      </span>
+    </button>
   );
 }
 

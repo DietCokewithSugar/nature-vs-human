@@ -1,7 +1,7 @@
 import type { JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { Counter, DisasterBanner, MapButton, Menu, NewsBubble, PlacementBar, RunBar, SkillDock, SkyBar } from './hud.tsx';
-import { Flash, Floats, Modals, Toasts } from './overlays.tsx';
+import { Counter, DisasterBanner, EraBadge, MapButton, Menu, NewsBubble, PlacementBar, RunBar, SkillDock, SkyBar } from './hud.tsx';
+import { EraCard, Flash, Floats, Modals, Toasts } from './overlays.tsx';
 import { Panel } from './panel.tsx';
 import { sheet, viewInsets, type Insets, type Sheet } from './store.ts';
 
@@ -138,7 +138,10 @@ export function App({ onInsets }: AppProps) {
       <div class="hud" ref={hud} data-layout={mobile ? 'sheet' : 'side'} data-sheet={state} style={{ '--sheet-h': mobile ? `${heights[state]}px` : '' }}>
         <SkyBar />
         <header class="topbar">
-          <Counter />
+          <div class="topleft">
+            <Counter />
+            <EraBadge />
+          </div>
           <RunBar />
           <Menu />
         </header>
@@ -152,6 +155,7 @@ export function App({ onInsets }: AppProps) {
       <Floats />
       <Toasts />
       <Flash />
+      <EraCard />
       <Modals />
     </>
   );

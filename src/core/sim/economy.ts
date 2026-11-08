@@ -14,20 +14,52 @@ export function natureIncome(world: World, mods: Mods): number {
   return world.held.nature * E.naturePerCell * mods.incomeMult;
 }
 
-/** The humans' income per second: ground, resource points, money-making buildings and pigs. */
-export function humanIncome(run: RunState, world: World): number {
-  let x = E.humanBase[run.era - 1]! + world.held.human * E.humanPerCell + world.nodesHeld(run, 'human') * E.humanPerNode;
+/** Where the humans' 自然之元 comes from, per second, before the multipliers. */
+export interface HumanIncomeParts {
+  /** Trade and taxes for the era. */
+  base: number;
+  /** Ground they hold, and the cells counted. */
+  land: number;
+  cells: number;
+  /** Resource points they hold, and how many. */
+  nodes: number;
+  nodeCount: number;
+  /** Factories, farms, mines, banks, the airport. */
+  buildings: number;
+  /** Pigs grazing and planes in the air. */
+  animals: number;
+  /** Digging in as nature takes ground (≥ 1). */
+  panic: number;
+  /** The difficulty's multiplier. */
+  difficulty: number;
+  total: number;
+}
+
+export function humanIncomeParts(run: RunState, world: World): HumanIncomeParts {
+  const nodeCount = world.nodesHeld(run, 'human');
+  let buildings = 0;
   for (const b of run.buildings) {
     if (b.side !== 'human' || b.build < 1) continue;
-    x += BUILDINGS[b.kind].income ?? 0;
+    buildings += BUILDINGS[b.kind].income ?? 0;
   }
+  let animals = 0;
   for (const u of run.units) {
-    if (u.kind === 'pig') x += E.pigIncome;
-    else if (u.kind === 'plane') x += E.planeIncome;
+    if (u.kind === 'pig') animals += E.pigIncome;
+    else if (u.kind === 'plane') animals += E.planeIncome;
   }
+  const base = E.humanBase[run.era - 1]!;
+  const land = world.held.human * E.humanPerCell;
+  const nodes = nodeCount * E.humanPerNode;
   const share = world.held.total ? world.held.nature / world.held.total : 0;
   const panic = 1 + E.panicWeight * Math.max(0, share - E.panicFrom);
-  return x * panic * BALANCE.difficulty[run.difficulty].income;
+  const difficulty = BALANCE.difficulty[run.difficulty].income;
+  const total = (base + land + nodes + buildings + animals) * panic * difficulty;
+  return { base, land, cells: world.held.human, nodes, nodeCount, buildings, animals, panic, difficulty, total };
+}
+
+/** The humans' income per second: trade, ground, resource points, money-making buildings, pigs and planes. */
+export function humanIncome(run: RunState, world: World): number {
+  return humanIncomeParts(run, world).total;
 }
 
 /** Value of one bubble in this era. */

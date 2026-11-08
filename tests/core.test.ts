@@ -559,3 +559,73 @@ import { siteCheck } from '../src/core/sim/buildings.ts';
 function siteOf(ctx: Ctx, kind: BuildingId, k: number): boolean {
   return siteCheck(ctx.run, ctx.world, ctx.mods, kind, k).ok;
 }
+
+// ── Lifespan ────────────────────────────────────────────────────
+
+import { spawnUnit } from '../src/core/sim/units.ts';
+
+describe('lifespan', () => {
+  it('ends every kind of unit, human and animal alike, when it runs out', () => {
+    const g = fresh(5);
+    const ctx = ctxOf(g);
+    const kinds = Object.keys(UNITS) as UnitId[];
+    const spot = (kind: UnitId): [number, number] => {
+      const nav = UNITS[kind].nav;
+      const c = nav === 'sea' ? CELLS[cell(4, 22)]! : nav === 'water' ? CELLS[cell(13, 10)]! : CELLS[cell(16, 11)]!;
+      return [c.x, c.z];
+    };
+    const units = kinds.map((kind) => {
+      const [x, z] = spot(kind);
+      const u = spawnUnit(ctx, kind, x, z, 0);
+      // Nothing else may kill it first.
+      u.hp = 1e9;
+      u.age = u.life - 0.05;
+      return u;
+    });
+    const aged = new Map<number, string>();
+    g.on((e) => e.type === 'unitDied' && aged.set(e.id, e.cause));
+    g.advance(0.2);
+    for (const u of units) {
+      expect(aged.get(u.id), u.kind).toBe('age');
+      expect(g.world.units.has(u.id)).toBe(false);
+    }
+    expect(units.map((u) => u.side)).toContain('human');
+    expect(units.map((u) => u.side)).toContain('nature');
+  });
+
+  it('keeps every unit alive until then, with the white bar running down', () => {
+    const g = fresh(6);
+    const ctx = ctxOf(g);
+    const c = CELLS[cell(16, 11)]!;
+    const worker = spawnUnit(ctx, 'officeWorker', c.x, c.z, 0);
+    worker.hp = 1e9;
+    worker.age = worker.life - 1;
+    g.advance(0.5);
+    expect(g.world.units.has(worker.id)).toBe(true);
+    expect(1 - worker.age / worker.life).toBeGreaterThan(0);
+    g.advance(0.6);
+    expect(g.world.units.has(worker.id)).toBe(false);
+  });
+
+  it('gives each species its own natural span, from day-long locusts to long-lived modern people', () => {
+    expect(UNITS.locust.life).toBeLessThan(UNITS.ant.life);
+    expect(UNITS.ant.life).toBeLessThan(UNITS.wolf.life);
+    expect(UNITS.wolf.life).toBeLessThan(UNITS.elephant.life);
+    expect(UNITS.gatherer.life).toBeLessThan(UNITS.worker.life);
+    expect(UNITS.worker.life).toBeLessThan(UNITS.officeWorker.life);
+  });
+});
+
+describe('the humans report', () => {
+  it('adds its income sources up to what the humans actually earn', () => {
+    const g = fresh(8);
+    g.advance(60);
+    const h = g.humanReport();
+    const parts = h.income;
+    expect(parts.total).toBeCloseTo(g.humanIncome(), 6);
+    expect(parts.total).toBeCloseTo((parts.base + parts.land + parts.nodes + parts.buildings + parts.animals) * parts.panic * parts.difficulty, 6);
+    expect(h.essence).toBe(g.run.humanEssence);
+    expect(h.research.rate).toBeCloseTo(g.researchRate(), 10);
+    expect(h.research.eta).toBeGreaterThan(0);
+  });
+});

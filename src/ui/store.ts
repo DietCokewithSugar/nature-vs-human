@@ -3,7 +3,7 @@ import type { BuildingId, Difficulty, EraId, Game, RouteId } from '../core/index
 import type { Settings } from '../data/storage.ts';
 
 export type Tab = 'build' | 'skills' | 'meta';
-export type ModalId = 'leaderboard' | 'settings' | 'setup' | 'result' | 'building' | 'unit' | 'kind' | null;
+export type ModalId = 'leaderboard' | 'settings' | 'setup' | 'result' | 'building' | 'unit' | 'kind' | 'humans' | null;
 /** How far the shop is pulled out. On wide screens anything but 'closed' means open. */
 export type Sheet = 'closed' | 'half' | 'full';
 export interface Insets {
@@ -44,6 +44,18 @@ export const detailKind = signal<BuildingId | null>(null);
 export const placing = signal<BuildingId | null>(null);
 /** Waiting for a tap to plant the rally flag. */
 export const rallying = signal(false);
+/** The big title card shown when an era begins. */
+export const eraCard = signal<{ era: EraId; id: number } | null>(null);
+
+let cardId = 0;
+
+export function showEra(era: EraId): void {
+  const id = ++cardId;
+  eraCard.value = { era, id };
+  setTimeout(() => {
+    if (eraCard.value?.id === id) eraCard.value = null;
+  }, 4600);
+}
 /** The part of the screen the UI leaves for the map. */
 export const viewInsets = signal<Insets>({ top: 0, right: 0, bottom: 0, left: 0 });
 

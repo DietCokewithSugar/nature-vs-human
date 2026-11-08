@@ -46,7 +46,7 @@ import { CityScene } from '../scene/city.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
 import { Sfx } from '../ui/sfx.ts';
-import { detail, flash, frame, modal, placing, pushFloat, pushToast, rallying, setApp } from '../ui/store.ts';
+import { detail, flash, frame, modal, placing, pushFloat, pushToast, rallying, setApp, showEra } from '../ui/store.ts';
 import { GameLoop } from './loop.ts';
 
 const game = new Game(loadGame());
@@ -145,8 +145,7 @@ function onEvent(e: CoreEvent): void {
   scene.event(e);
   switch (e.type) {
     case 'eraUnlocked': {
-      const t = COPY.toast.era[e.era];
-      if (t) pushToast({ ...t, era: e.era }, 5200);
+      showEra(e.era);
       sfx.era();
       if (placing.value) scene.setMode('place', game.sites(placing.value));
       save();
@@ -196,7 +195,8 @@ function onEvent(e: CoreEvent): void {
       stopPlacing();
       scene.reset();
       save();
-      pushToast(COPY.toast.welcome, 6000);
+      showEra(1);
+      setTimeout(() => pushToast(COPY.toast.welcome, 6000), 4200);
       break;
     case 'skillBought':
       sfx.upgrade();
@@ -288,7 +288,10 @@ window.addEventListener('pagehide', save);
 
 scene.sync(game);
 if (game.run.result) modal.value = 'result';
-else if (game.run.time < 1) pushToast(COPY.toast.welcome, 6000);
+else if (game.run.time < 1) {
+  showEra(1);
+  setTimeout(() => pushToast(COPY.toast.welcome, 6000), 4200);
+}
 loop.start();
 setInterval(() => frame.value++, 125);
 setInterval(() => {

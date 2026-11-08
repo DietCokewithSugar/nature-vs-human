@@ -16,20 +16,41 @@ const R = BALANCE.research;
 
 // ── Research and eras ───────────────────────────────────────────
 
-/** Research per second: a trickle, plus every lab level and every scholar alive. */
-export function researchRate(run: RunState, world: World, mods: Mods): number {
-  let labs = 0;
-  for (const b of run.buildings) if (b.side === 'human' && b.build >= 1 && BUILDINGS[b.kind].lab) labs += b.level;
+/** What drives the humans' research right now. */
+export interface ResearchParts {
+  /** Levels of standing labs, and living shamans, scholars and researchers. */
+  labLevels: number;
+  scholars: number;
+  /** How hard nature's land grab pushes them (includes the rush). */
+  pressure: number;
+  rush: boolean;
+  /** Research per second (0 … 4 scale), and seconds until the next whole step at this pace. */
+  rate: number;
+  eta: number;
+}
+
+export function researchParts(run: RunState, world: World, mods: Mods): ResearchParts {
+  let labLevels = 0;
+  for (const b of run.buildings) if (b.side === 'human' && b.build >= 1 && BUILDINGS[b.kind].lab) labLevels += b.level;
   let scholars = 0;
   for (const u of run.units) {
     const role = UNITS[u.kind].role;
     if (u.side === 'human' && (role === 'research' || role === 'capture')) scholars++;
   }
   const share = natureShare(world);
-  let pressure = R.pressureFloor + R.pressureWeight * share;
-  if (share >= BALANCE.territory.winShare && run.era < 4) pressure *= R.rush;
+  const rush = share >= BALANCE.territory.winShare && run.era < 4;
+  const pressure = (R.pressureFloor + R.pressureWeight * share) * (rush ? R.rush : 1);
   const stage = Math.min(3, Math.floor(run.research));
-  return ((R.base + R.perLab * labs + R.perScholar * scholars) * pressure * BALANCE.difficulty[run.difficulty].research * mods.researchMult) / R.eraCost[stage]!;
+  const rate =
+    ((R.base + R.perLab * labLevels + R.perScholar * scholars) * pressure * BALANCE.difficulty[run.difficulty].research * mods.researchMult) /
+    R.eraCost[stage]!;
+  const left = Math.min(4, Math.floor(run.research) + 1) - run.research;
+  return { labLevels, scholars, pressure, rush, rate, eta: rate > 0 ? left / rate : Infinity };
+}
+
+/** Research per second: a trickle, plus every lab level and every scholar alive, pushed by nature's land grab. */
+export function researchRate(run: RunState, world: World, mods: Mods): number {
+  return researchParts(run, world, mods).rate;
 }
 
 export function stepResearch(ctx: Ctx, dt: number): void {
