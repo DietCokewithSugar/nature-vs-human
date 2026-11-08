@@ -19,9 +19,6 @@ services:
       - path: /assets/*
         name: Cache-Control
         value: public, max-age=31536000, immutable
-      - path: /models/*
-        name: Cache-Control
-        value: public, max-age=604800
       # The sprite atlas keeps its name across bakes: cache for a day only.
       - path: /sprites/*
         name: Cache-Control

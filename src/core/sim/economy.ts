@@ -1,107 +1,134 @@
 import { BALANCE } from '../config/balance.ts';
 import { BUILDINGS } from '../config/buildings.ts';
-import { CELLS, NODES, isOpen } from '../map/grid.ts';
+import { UNITS } from '../config/units.ts';
+import { SPRINGS } from '../map/layout.ts';
 import type { RunState } from '../state.ts';
-import { rand, type Ctx } from './ctx.ts';
-import type { World } from './world.ts';
-import { NATURE } from './world.ts';
-import type { Mods } from '../modifiers.ts';
+import type { Diet, Side, UnitId } from '../types.ts';
+import { segOwner, unitSegment, type Ctx } from './ctx.ts';
+import { meadowGrass, motherIncome, unitEat, unitMeat, type Mods } from './stats.ts';
 
-const E = BALANCE.economy;
-
-/** Nature's passive 自然之元 per second: every cell it holds breathes a little. */
-export function natureIncome(world: World, mods: Mods): number {
-  return world.held.nature * E.naturePerCell * mods.incomeMult;
+export interface FoodLine {
+  /** Per second. */
+  supply: number;
+  demand: number;
+  stock: number;
+  cap: number;
 }
 
-/** Where the humans' 自然之元 comes from, per second, before the multipliers. */
-export interface HumanIncomeParts {
-  /** Trade and taxes for the era. */
-  base: number;
-  /** Ground they hold, and the cells counted. */
-  land: number;
-  cells: number;
-  /** Resource points they hold, and how many. */
-  nodes: number;
-  nodeCount: number;
-  /** Factories, farms, mines, banks, the airport. */
-  buildings: number;
-  /** Pigs grazing and planes in the air. */
-  animals: number;
-  /** Digging in as nature takes ground (≥ 1). */
-  panic: number;
-  /** The difficulty's multiplier. */
-  difficulty: number;
+export interface FoodSummary {
+  grass: FoodLine;
+  meat: FoodLine;
+}
+
+export interface IncomeParts {
+  main: number;
+  ground: number;
+  springs: number;
+  gather: number;
   total: number;
 }
 
-export function humanIncomeParts(run: RunState, world: World): HumanIncomeParts {
-  const nodeCount = world.nodesHeld(run, 'human');
-  let buildings = 0;
-  for (const b of run.buildings) {
-    if (b.side !== 'human' || b.build < 1) continue;
-    buildings += BUILDINGS[b.kind].income ?? 0;
-  }
-  let animals = 0;
+function stockCap(supply: number): number {
+  return Math.max(BALANCE.nature.minStock, supply * BALANCE.nature.stockSeconds);
+}
+
+export function natureFood(run: RunState, mods: Mods): FoodSummary {
+  let meadows = 0;
+  for (const b of run.buildings) if (b.kind === 'meadow' && b.progress >= 1) meadows++;
+  const grassSupply = meadows * meadowGrass(run, mods);
+  let grassDemand = 0;
+  let meatSupply = 0;
+  let meatDemand = 0;
   for (const u of run.units) {
-    if (u.kind === 'pig') animals += E.pigIncome;
-    else if (u.kind === 'plane') animals += E.planeIncome;
+    if (u.side !== 'nature') continue;
+    const def = UNITS[u.kind];
+    if (def.diet === 'grass') {
+      grassDemand += unitEat(u.kind, mods);
+      meatSupply += unitMeat(u.kind, mods);
+    } else if (def.diet === 'meat') meatDemand += unitEat(u.kind, mods);
   }
-  const base = E.humanBase[run.era - 1]!;
-  const land = world.held.human * E.humanPerCell;
-  const nodes = nodeCount * E.humanPerNode;
-  const share = world.held.total ? world.held.nature / world.held.total : 0;
-  const panic = 1 + E.panicWeight * Math.max(0, share - E.panicFrom);
-  const difficulty = BALANCE.difficulty[run.difficulty].income;
-  const total = (base + land + nodes + buildings + animals) * panic * difficulty;
-  return { base, land, cells: world.held.human, nodes, nodeCount, buildings, animals, panic, difficulty, total };
+  return {
+    grass: { supply: grassSupply, demand: grassDemand, stock: run.grassStock, cap: stockCap(grassSupply) },
+    meat: { supply: meatSupply, demand: meatDemand, stock: run.meatStock, cap: stockCap(meatSupply) },
+  };
 }
 
-/** The humans' income per second: trade, ground, resource points, money-making buildings, pigs and planes. */
-export function humanIncome(run: RunState, world: World): number {
-  return humanIncomeParts(run, world).total;
+export function humanFood(run: RunState): FoodLine {
+  let supply = 0;
+  for (const b of run.buildings) if (b.side === 'human' && b.progress >= 1) supply += BUILDINGS[b.kind].food ?? 0;
+  let demand = 0;
+  for (const u of run.units) if (u.side === 'human') demand += UNITS[u.kind].eat;
+  return { supply, demand, stock: run.human.food, cap: stockCap(supply) };
 }
 
-/** Value of one bubble in this era. */
-export function bubbleValue(run: RunState, mods: Mods): number {
-  return Math.round(E.bubble.value[run.era - 1]! * mods.bubbleMult);
+/** Stretches a side holds, and how many of them are hot springs. */
+export function held(run: RunState, side: Side): { segments: number; springs: number } {
+  let segments = 0;
+  for (const lane of [0, 1, 2] as const) for (let s = 0; s < run.segments[lane]!.length; s++) if (segOwner(run, lane, s) === side) segments++;
+  let springs = 0;
+  for (const sp of SPRINGS) if (segOwner(run, sp.lane, sp.seg) === side) springs++;
+  return { segments, springs };
 }
 
+export function natureIncome(run: RunState, mods: Mods): IncomeParts {
+  const h = held(run, 'nature');
+  const main = run.buildings.some((b) => b.kind === 'mothertree') ? motherIncome(run, mods) : 0;
+  const ground = h.segments * BALANCE.nature.perSegment * mods.income;
+  const springs = h.springs * BALANCE.nature.spring * mods.income;
+  return { main, ground, springs, gather: 0, total: main + ground + springs };
+}
+
+export function humanIncome(run: RunState): IncomeParts {
+  const h = held(run, 'human');
+  const lodge = run.buildings.find((b) => b.kind === 'lodge');
+  const main = lodge ? (BUILDINGS.lodge.income ?? 0) + BALANCE.human.incomePerStage * (run.stage - 1) : 0;
+  const ground = h.segments * BALANCE.human.perSegment;
+  const springs = h.springs * BALANCE.human.spring;
+  let workers = 0;
+  for (const u of run.units) if (u.kind === 'gatherer' && unitSegment(u) >= 0) workers++;
+  const gather = workers * BALANCE.human.gather;
+  return { main, ground, springs, gather, total: main + ground + springs + gather };
+}
+
+/** Would one more of this unit still be fed? */
+export function canFeed(ctx: Ctx, kind: UnitId, nature: FoodSummary, human: FoodLine): boolean {
+  const def = UNITS[kind];
+  const eat = unitEat(kind, ctx.mods);
+  const line = def.diet === 'grass' ? nature.grass : def.diet === 'meat' ? nature.meat : human;
+  return line.demand + eat <= line.supply + 1e-6;
+}
+
+/** Feed both sides: food stocks fill or drain; when a stock is empty and too many mouths, that layer starves. */
 export function stepEconomy(ctx: Ctx, dt: number): void {
-  const { run, world, mods } = ctx;
-  const gain = natureIncome(world, mods) * dt;
-  run.essence += gain;
-  run.earned += gain;
-  run.humanEssence += humanIncome(run, world) * dt;
+  const run = ctx.run;
+  const nf = natureFood(run, ctx.mods);
+  const hf = humanFood(run);
+  run.essence += natureIncome(run, ctx.mods).total * dt;
+  if (run.wonAt === null) run.human.supplies += humanIncome(run).total * dt;
 
-  // Bubbles well up at the resource points nature holds.
-  if (run.nodeTimers.length !== NODES.length) run.nodeTimers = NODES.map(() => rand(ctx) * 8);
-  NODES.forEach((node, i) => {
-    if (!isOpen(run.era, node.cell) || run.owner[node.cell] !== NATURE) return;
-    run.nodeTimers[i] = run.nodeTimers[i]! - dt * mods.bubbleRate;
-    if (run.nodeTimers[i]! > 0) return;
-    const [lo, hi] = E.bubble.gap;
-    run.nodeTimers[i] = lo + (hi - lo) * rand(ctx);
-    if (run.bubbles.some((b) => b.node === i)) return;
-    run.bubbles.push({ id: run.nextId++, node: i, value: bubbleValue(run, mods), left: E.bubble.life, claimed: 0 });
-  });
-  for (const b of run.bubbles) {
-    b.left -= dt;
-    if (b.claimed && !world.units.has(b.claimed)) b.claimed = 0;
-  }
-  if (run.bubbles.some((b) => b.left <= 0)) run.bubbles = run.bubbles.filter((b) => b.left > 0);
+  const feed = (line: FoodLine, set: (v: number) => void, side: Side, diet: Diet) => {
+    const next = line.stock + (line.supply - line.demand) * dt;
+    if (next >= 0) {
+      set(Math.min(line.cap, next));
+      markHungry(run, diet, false);
+      return;
+    }
+    set(0);
+    const short = line.demand > 0 ? Math.min(1, (line.demand - line.supply) / line.demand) : 0;
+    if (short <= 0) return;
+    const wasHungry = run.units.some((u) => u.hungry && UNITS[u.kind].diet === diet);
+    markHungry(run, diet, true);
+    if (!wasHungry) ctx.emit({ type: 'starving', side, diet });
+    for (const u of run.units) {
+      if (UNITS[u.kind].diet !== diet) continue;
+      u.hp -= u.maxHp * BALANCE.nature.starve * short * dt;
+    }
+  };
+  feed(nf.grass, (v) => (run.grassStock = v), 'nature', 'grass');
+  feed(nf.meat, (v) => (run.meatStock = v), 'nature', 'meat');
+  feed(hf, (v) => (run.human.food = v), 'human', 'food');
 }
 
-/** Pick a bubble up. Returns its value (0 if it is gone). */
-export function collectBubble(ctx: Ctx, id: number, by: 'tap' | 'pollinator'): number {
-  const { run } = ctx;
-  const b = run.bubbles.find((x) => x.id === id);
-  if (!b) return 0;
-  run.bubbles = run.bubbles.filter((x) => x.id !== id);
-  run.essence += b.value;
-  run.earned += b.value;
-  run.stats.bubbles++;
-  const c = CELLS[NODES[b.node]!.cell]!;
-  ctx.emit({ type: 'collected', value: b.value, by, x: c.x, z: c.z });
-  return b.value;
+function markHungry(run: RunState, diet: Diet, hungry: boolean): void {
+  for (const u of run.units) if (UNITS[u.kind].diet === diet) u.hungry = hungry;
 }

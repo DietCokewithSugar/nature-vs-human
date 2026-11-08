@@ -1,0 +1,838 @@
+/* ─────────────────────────────────────────────────────────────
+ * The HUD: a wooden status bar across the top, a parchment side panel (beside the map on
+ * landscape screens, under it on portrait ones), pop-overs and modals. Pixel frames come
+ * from frames.css (scripts/ui-frames.mjs); colours from tokens.css.
+ * ───────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
+b,
+strong,
+h1,
+h2,
+h3 {
+  font-weight: 400;
+}
+
+.hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  --panel-w: 296px;
+  --gap: 6px;
+}
+
+.hud > * {
+  pointer-events: auto;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.warn {
+  color: var(--danger-text);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+}
+
+.row.gap {
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.row.between {
+  justify-content: space-between;
+}
+
+.pic {
+  display: inline-flex;
+  align-items: flex-end;
+  justify-content: center;
+  image-rendering: pixelated;
+  flex: none;
+}
+
+.pic img {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* ── Frames ──────────────────────────────────────────────────── */
+
+.topbar,
+.panel,
+.modal,
+.toast,
+.bpop,
+.menu-pop {
+  border-style: solid;
+  border-width: 10px;
+  border-image: var(--frame-wood) 5 / 10px;
+  background: var(--paper) padding-box;
+}
+
+.bcard,
+.chain,
+.talent,
+.pick-card,
+.over-sum,
+.purse {
+  border-style: solid;
+  border-width: 4px;
+  border-image: var(--frame-slot) 2 / 4px;
+  background: var(--card) padding-box;
+}
+
+.bar {
+  position: relative;
+  display: inline-block;
+  height: 10px;
+  min-width: 40px;
+  flex: 1;
+  border-style: solid;
+  border-width: 2px;
+  border-image: var(--frame-ink) 1 / 2px;
+  background: var(--ink) padding-box;
+}
+
+.bar i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--brand);
+  box-shadow: inset 0 2px 0 #ffffff59;
+}
+
+.bar[data-tone='human'] i {
+  background: #ea4f36;
+}
+
+.bar[data-tone='nature'] i {
+  background: #30e1b9;
+}
+
+.bar[data-tone='grass'] i {
+  background: #1ebc73;
+}
+
+.bar[data-tone='meat'] i {
+  background: #e83b3b;
+}
+
+.bar[data-tone='gold'] i {
+  background: #f9c22b;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────── */
+
+.btn,
+.tabs button,
+.close,
+.seg button.on {
+  --btn: var(--btn-plain);
+  --btn-down: var(--btn-plain-down);
+  --tone: var(--tone-plain);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-style: solid;
+  border-width: 4px 4px 6px;
+  border-image: var(--btn) 2 2 3 / 4px 4px 6px;
+  background: var(--tone) padding-box;
+  color: var(--text);
+  padding: 2px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:active:not(:disabled),
+.tabs button:active,
+.close:active {
+  border-width: 4px 4px 4px;
+  border-image: var(--btn-down) 2 2 2 / 4px 4px 4px;
+  transform: translateY(2px);
+}
+
+.btn.green,
+.tabs button.on {
+  --btn: var(--btn-green);
+  --btn-down: var(--btn-green-down);
+  --tone: var(--tone-green);
+  color: white;
+  text-shadow: 0 2px 0 var(--brand-side);
+}
+
+.btn.gold {
+  --btn: var(--btn-gold);
+  --btn-down: var(--btn-gold-down);
+  --tone: var(--tone-gold);
+}
+
+.btn.red,
+.close {
+  --btn: var(--btn-red);
+  --btn-down: var(--btn-red-down);
+  --tone: var(--tone-red);
+  color: white;
+  text-shadow: 0 2px 0 var(--danger-side);
+}
+
+.btn.wood,
+.tabs button {
+  --btn: var(--btn-wood);
+  --btn-down: var(--btn-wood-down);
+  --tone: var(--tone-wood);
+  color: var(--paper);
+  text-shadow: 0 2px 0 var(--money);
+}
+
+.btn.grey,
+.btn:disabled {
+  --btn: var(--btn-grey);
+  --btn-down: var(--btn-grey-down);
+  --tone: var(--tone-grey);
+  color: var(--text-muted);
+  text-shadow: none;
+}
+
+.btn.small {
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+.btn.big {
+  font-size: 18px;
+  padding: 4px 18px;
+  margin-top: 8px;
+}
+
+.close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 0;
+}
+
+.close::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  background: var(--icon-close) center / contain no-repeat;
+}
+
+.seg {
+  display: inline-flex;
+  background: var(--paper-sunken);
+}
+
+.seg button {
+  border: 4px solid transparent;
+  background: transparent;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+/* ── Top bar ─────────────────────────────────────────────────── */
+
+.topbar {
+  position: absolute;
+  top: var(--gap);
+  left: var(--gap);
+  right: calc(var(--panel-w) + var(--gap) * 2);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+  min-height: 40px;
+}
+
+.stage-badge {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  flex: none;
+}
+
+.stage-badge b {
+  font-size: 18px;
+}
+
+.stage-badge small {
+  color: var(--text-muted);
+}
+
+.foe {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.foe-pic img {
+  width: 36px;
+  height: auto;
+}
+
+.foe-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.foe-text small {
+  color: var(--text-muted);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.foe-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.top-buttons {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  z-index: 20;
+}
+
+.menu-pop button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.menu-pop button:hover {
+  background: var(--card);
+}
+
+.menu-pop button.danger {
+  color: var(--danger-text);
+}
+
+/* ── Side panel ──────────────────────────────────────────────── */
+
+.panel {
+  position: absolute;
+  top: var(--gap);
+  right: var(--gap);
+  bottom: var(--gap);
+  width: var(--panel-w);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.purse {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 2px 6px;
+}
+
+.essence {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.purse .essence {
+  font-size: 24px;
+}
+
+.purse .essence .pic img {
+  width: 14px;
+}
+
+.chain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+
+.chain-row {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  grid-template-areas: 'label units' 'label meter';
+  column-gap: 4px;
+  align-items: center;
+}
+
+.chain-row.plants {
+  grid-template-areas: 'label units' 'label note';
+}
+
+.chain-label {
+  grid-area: label;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: #239063;
+  text-shadow: 0 2px 0 #165a4c;
+}
+
+.chain-row[data-diet='meat'] .chain-label {
+  background: #ae2334;
+  text-shadow: 0 2px 0 #6e2727;
+}
+
+.chain-row.plants .chain-label {
+  background: #547e64;
+}
+
+.chain-row[data-hungry] .chain-label {
+  animation: blink 0.5s steps(2) infinite;
+}
+
+.chain-units {
+  grid-area: units;
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.chain-unit {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 1px;
+}
+
+.chain-unit[data-none] {
+  opacity: 0.35;
+}
+
+.chain-unit .pic img {
+  max-height: 22px;
+}
+
+.chain-meter {
+  grid-area: meter;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.chain-meter small {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.chain-note {
+  grid-area: note;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tabs button {
+  flex: 1;
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+
+.panel-body h3 {
+  margin: 6px 0 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.hint {
+  margin: 0 0 4px;
+  color: var(--brand-text);
+}
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bcard {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+
+.bcard:not([data-afford]) {
+  filter: saturate(0.5);
+}
+
+.bcard.on {
+  border-image: var(--frame-ink) 1 / 4px;
+  background: var(--lemon, #fbff86) padding-box;
+}
+
+.bcard-pic {
+  width: 44px;
+  height: 40px;
+}
+
+.bcard-pic img {
+  max-width: 44px;
+  max-height: 40px;
+}
+
+.bcard-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+
+.bcard-text small {
+  font-size: 12px;
+}
+
+.lv {
+  color: var(--money);
+}
+
+.price {
+  flex: none;
+}
+
+/* ── Building pop-over ───────────────────────────────────────── */
+
+.bpop {
+  position: absolute;
+  width: 220px;
+  transform: translateY(-100%);
+  padding: 2px;
+  z-index: 10;
+}
+
+.bpop header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.bpop header b {
+  font-size: 18px;
+}
+
+.bpop p {
+  margin: 4px 0;
+}
+
+.bpop[data-side='human'] header b {
+  color: var(--danger-text);
+}
+
+/* ── Toasts ──────────────────────────────────────────────────── */
+
+.toasts {
+  position: absolute;
+  top: 70px;
+  left: calc((100% - var(--panel-w)) / 2);
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: none !important;
+  z-index: 15;
+}
+
+.toast {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 8px;
+  max-width: 420px;
+  animation: pop 0.24s steps(3);
+}
+
+.toast[data-tone='bad'] b {
+  color: var(--danger-text);
+}
+
+.toast[data-tone='good'] b {
+  color: var(--brand-text);
+}
+
+.toast small {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ── Modals ──────────────────────────────────────────────────── */
+
+.scrim {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #2e222fa6;
+  z-index: 30;
+  padding: 12px;
+}
+
+.modal {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  animation: pop 0.24s steps(3);
+}
+
+.modal.wide {
+  width: min(640px, 100%);
+}
+
+.modal header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modal h2 {
+  margin: 0;
+  font-size: 24px;
+}
+
+.modal h3 {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modal p {
+  margin: 0;
+}
+
+.modal .sub {
+  color: var(--text-muted);
+}
+
+.modal textarea,
+.modal input {
+  font: inherit;
+  border: 2px solid var(--ink);
+  background: var(--card);
+  padding: 4px;
+  width: 100%;
+}
+
+.modal .btn.big {
+  align-self: center;
+}
+
+.pick {
+  width: min(680px, 100%);
+  align-items: center;
+}
+
+.pick-cards {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.pick-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.pick-card:hover {
+  background: #fbff86 padding-box;
+}
+
+.pick-card b {
+  font-size: 18px;
+}
+
+.pick-group {
+  color: white;
+  background: #239063;
+  padding: 0 6px;
+}
+
+.pick-card[data-group='species'] .pick-group {
+  background: #cd683d;
+}
+
+.pick-card[data-group='all'] .pick-group {
+  background: #4d65b4;
+}
+
+.pick-pic {
+  min-height: 52px;
+}
+
+.over {
+  align-items: stretch;
+}
+
+.over-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  align-items: center;
+  padding: 4px 8px;
+}
+
+.genes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 18px;
+  color: var(--brand-text);
+}
+
+.talents {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px;
+}
+
+.talent {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+}
+
+.talent .btn {
+  align-self: flex-start;
+}
+
+.help {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.board {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.board li {
+  display: grid;
+  grid-template-columns: 36px 1fr auto;
+  gap: 6px;
+  padding: 2px 4px;
+}
+
+.board li[data-me] {
+  background: var(--card);
+}
+
+/* ── Portrait / narrow: the panel goes under the map ─────────── */
+
+.hud[data-layout='sheet'] .topbar {
+  right: var(--gap);
+}
+
+.hud[data-layout='sheet'] .panel {
+  top: auto;
+  left: var(--gap);
+  width: auto;
+  height: 46vh;
+}
+
+.hud[data-layout='sheet'] .toasts {
+  left: 50%;
+}
+
+.hud[data-layout='sheet'] .chain-note {
+  display: none;
+}
+
+@media (max-height: 500px) {
+  .hud {
+    --panel-w: 250px;
+    --gap: 2px;
+  }
+
+  .chain-note {
+    display: none;
+  }
+
+  .purse .essence {
+    font-size: 18px;
+  }
+
+  .stage-badge small {
+    display: none;
+  }
+}
+
+@keyframes pop {
+  from {
+    transform: translateY(6px);
+    opacity: 0;
+  }
+}
+
+@keyframes blink {
+  50% {
+    filter: brightness(1.6);
+  }
+}

@@ -9,3 +9,5 @@ coverage/
 .vite/
 supabase/.temp/
 supabase/.branches/
+art/.preview/
+__pycache__/

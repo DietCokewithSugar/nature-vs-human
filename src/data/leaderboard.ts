@@ -1,14 +1,13 @@
 import { signal } from '@preact/signals';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { Difficulty, GameState } from '../core/index.ts';
+import type { GameState } from '../core/index.ts';
 import { loadPlayer, savePlayer } from './storage.ts';
 
-export type BoardKind = 'territory' | 'fastest';
 
 export interface LeaderEntry {
   rank: number;
   nickname: string;
-  /** Best territory share (percent), or seconds for the fastest win. */
+  /** Highest stage cleared. */
   value: number;
   me: boolean;
 }
@@ -104,22 +103,16 @@ export class Leaderboard {
   async submit(state: GameState, force = false): Promise<void> {
     if (!this.config) return;
     const meta = state.meta;
-    // The best share ever held, counting the run in progress.
-    const best = Math.round(Math.max(meta.bestTerritory, state.run.best) * 1000) / 10;
+    const best = meta.bestStage;
     const now = Date.now();
     const changed = best !== this.lastSent.best || meta.runs !== this.lastSent.runs;
     if (!force && (!changed || now - this.lastSent.at < 60_000)) return;
     if (!(await this.ensureSession()) || !this.client) return;
-    const fastest = (d: 'normal' | 'hard' | 'brutal') => (meta.fastest[d] === null ? null : Math.floor(meta.fastest[d]!));
-    const { error } = await this.client.rpc('submit_territory', {
+    const { error } = await this.client.rpc('submit_stage', {
       p_nickname: this.nickname.value,
-      p_best_territory: best,
+      p_best_stage: best,
       p_play_time_s: Math.floor(meta.playTime),
       p_runs: meta.runs,
-      p_wins: meta.wins.normal + meta.wins.hard + meta.wins.brutal,
-      p_fastest_normal_s: fastest('normal'),
-      p_fastest_hard_s: fastest('hard'),
-      p_fastest_brutal_s: fastest('brutal'),
     });
     if (error) {
       console.warn('Score submit rejected', error.message);
@@ -137,14 +130,11 @@ export class Leaderboard {
     return true;
   }
 
-  async fetch(kind: BoardKind, difficulty: Difficulty = 'normal', limit = 50): Promise<BoardResult | null> {
+  async fetch(limit = 50): Promise<BoardResult | null> {
     if (!(await this.ensureSession()) || !this.client) return null;
     this.status.value = 'busy';
     try {
-      const { data, error } =
-        kind === 'fastest'
-          ? await this.client.rpc('territory_fastest', { p_difficulty: difficulty, p_limit: limit })
-          : await this.client.rpc('territory_best', { p_limit: limit });
+      const { data, error } = await this.client.rpc('stage_best', { p_limit: limit });
       if (error) throw error;
       const rows = (data ?? []) as { rank: number; nickname: string; value: number; is_me: boolean }[];
       const entries: LeaderEntry[] = rows.map((r) => ({

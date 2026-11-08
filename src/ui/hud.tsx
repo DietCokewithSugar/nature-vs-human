@@ -1,172 +1,93 @@
-import type { ComponentChildren } from 'preact';
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { signal } from '@preact/signals';
 import {
   BALANCE,
   BUILDINGS,
-  CLASSES,
-  DISASTERS,
-  TAMEABLE,
+  HERBIVORES,
+  LEVEL_IDS,
+  PADS,
+  PREDATORS,
   UNITS,
-  countermeasureName,
-  dayOf,
-  formatDuration,
-  formatNumber,
-  hourOf,
-  tideLevel,
-  tideMult,
-  type ActiveId,
-  type EraId,
+  humanLevel,
+  mainOf,
+  meadowGrass,
+  motherIncome,
+  natureFood,
+  natureIncome,
+  padUser,
+  spawnInterval,
+  towerDmg,
+  unitAtk,
+  unitEat,
+  unitMaxHp,
+  unitMeat,
+  type LevelId,
+  type NatureBuildingId,
+  type NatureUnitId,
 } from '../core/index.ts';
-import { Essence, Thumb } from './common.tsx';
-import { COPY, NEWS, eraName } from './copy.ts';
-import { app, frame, modal, placing, rallying, viewInsets } from './store.ts';
+import { Bar, Essence, Pic, fmt } from './common.tsx';
+import { COPY, FOOD_NAME } from './copy.ts';
+import { app, frame, modal, placing, pushToast, selectedBuilding, selectedPad, tab, toasts } from './store.ts';
 
-// ── The sky: sun and moon across the very top ───────────────────
+// ── Top bar: the stage and the humans ───────────────────────────
 
-/**
- * The day as a strip: night blue at both ends, dawn and dusk orange, noon sky blue.
- * The sun (or the moon) rides along it at the current hour.
- */
-export function SkyBar() {
-  frame.value;
-  const t = app.game.run.time;
-  const h = hourOf(t);
-  const night = h < 5.5 || h >= 19;
-  const hh = Math.floor(h);
-  const mm = Math.floor((h - hh) * 60 / 10) * 10;
-  return (
-    <div class="skybar" role="timer" aria-label={`${COPY.sky.day(dayOf(t) + 1)} ${COPY.sky.clock(hh, mm)}`}>
-      <div class="sky-track">
-        <span class="sky-body" data-night={night || undefined} style={{ left: `${(h / 24) * 100}%` }} aria-hidden="true" />
-      </div>
-      <span class="sky-label num">
-        {COPY.sky.day(dayOf(t) + 1)} · {COPY.sky.clock(hh, mm)}
-      </span>
-    </div>
-  );
-}
-
-// ── 自然之元 ─────────────────────────────────────────────────────
-
-export function Counter() {
-  frame.value;
-  const g = app.game;
-  return (
-    <div class="counter">
-      <span class="coin" aria-hidden="true" />
-      <div class="counter-text">
-        <div class="counter-money num" aria-label={COPY.essence}>
-          {formatNumber(Math.floor(g.run.essence))}
-        </div>
-        <div class="counter-income num">
-          +{formatNumber(Math.round(g.income() * 10) / 10)}
-          {COPY.perSecond}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Which era the humans are in, big and coloured, with how far their research is to the next one.
- * Tapping it opens the humans' side.
- */
-export function EraBadge() {
+export function TopBar() {
   frame.value;
   const run = app.game.run;
-  const era = run.era;
-  const stage = Math.min(3, Math.floor(run.research));
-  const pct = Math.floor((run.research >= 4 ? 1 : run.research - stage) * 100);
-  const sub = era < 4 ? COPY.era.next(COPY.era.full[(era + 1) as EraId], pct) : COPY.era.last(pct);
+  const lodge = mainOf(run, 'human');
+  const share = lodge ? lodge.hp / lodge.maxHp : 0;
+  const lv = humanLevel(run);
+  const next = Math.ceil(BALANCE.human.researchPeriod - (run.stageTime % BALANCE.human.researchPeriod));
+  const people = run.units.filter((u) => u.side === 'human').length;
   return (
-    <button type="button" class="era-badge" data-era={era} onClick={() => (modal.value = 'humans')} aria-label={`${COPY.era.full[era]}，${sub}`}>
-      <Thumb {...ERA_MODEL[era]} class="era-badge-pic" />
-      <span class="era-badge-text">
-        <b>{COPY.era.full[era]}</b>
-        <small>{sub}</small>
-      </span>
-      <span class="era-badge-bar" aria-hidden="true">
-        <i style={{ transform: `scaleX(${Math.max(0.02, pct / 100)})` }} />
-      </span>
-    </button>
+    <header class="topbar">
+      <div class="stage-badge">
+        <b>{COPY.top.stage(run.stage)}</b>
+        <small>
+          {COPY.era} · {COPY.top.camp(run.stage)}
+        </small>
+      </div>
+      <div class="foe">
+        <Pic k="building/lodge" scale={1} class="foe-pic" />
+        <div class="foe-text">
+          <div class="foe-row">
+            <span>{COPY.top.lodge}</span>
+            <Bar value={share} tone="human" label={COPY.top.lodge} />
+          </div>
+          <small>
+            {COPY.top.tools(lv)} · {COPY.top.nextTools(next)} · {COPY.top.people(people)}
+          </small>
+        </div>
+      </div>
+      <div class="top-buttons">
+        <button type="button" class="btn plain small" onClick={() => app.recenter()} title={COPY.top.recenter}>
+          {COPY.top.recenter}
+        </button>
+        <Menu />
+      </div>
+    </header>
   );
 }
 
-/** A landmark from each era, used for the era badge and the "back to the whole map" button. */
-export const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
-  1: { model: 'teepee' },
-  2: { model: 'temple' },
-  3: { model: 'loft', crop: 0.7 },
-  4: { model: 'office-tower', crop: 0.55 },
-};
-
-export function MapButton() {
-  frame.value;
-  if (!app.cameraMoved()) return null;
-  const era = app.game.run.era;
+function Menu() {
+  const open = modal.value === null && menuOpen.value;
   return (
-    <nav class="eras" aria-label={COPY.map.recenter}>
-      <button type="button" class="era" data-era={era} aria-label={COPY.map.recenter} title={COPY.map.recenter} onClick={() => app.recenter()}>
-        <Thumb {...ERA_MODEL[era]} />
-      </button>
-    </nav>
-  );
-}
-
-/** A disaster on its way or raging: what it is, how long, who profits. */
-export function DisasterBanner() {
-  frame.value;
-  const d = app.game.run.disaster;
-  if (!d) return null;
-  const def = DISASTERS[d.id];
-  const s = Math.ceil(d.left);
-  return (
-    <div class="alert" data-phase={d.phase} data-disaster={d.id} role="status">
-      <b>{d.phase === 'warning' ? COPY.disaster.warning(def.name, s) : COPY.disaster.active(def.name, s)}</b>
-      <span>{COPY.disaster.boost(CLASSES[def.boost.cls].name, def.boost.x)}</span>
-    </div>
-  );
-}
-
-/** One menu for everything that isn't the game itself. */
-export function Menu() {
-  frame.value;
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const muted = app.settings.value.muted;
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
-    document.addEventListener('pointerdown', away);
-    window.addEventListener('keydown', esc);
-    return () => {
-      document.removeEventListener('pointerdown', away);
-      window.removeEventListener('keydown', esc);
-    };
-  }, [open]);
-  const go = (m: 'leaderboard' | 'settings') => {
-    setOpen(false);
-    modal.value = m;
-  };
-  return (
-    <div class="menu" ref={ref}>
-      <button type="button" class="menu-btn" aria-label="菜单" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
-        <i />
-        <i />
-        <i />
+    <div class="menu">
+      <button type="button" class="btn wood small" aria-expanded={open} onClick={() => (menuOpen.value = !menuOpen.value)}>
+        ☰
       </button>
       {open && (
-        <div class="menu-pop" role="menu">
-          <button type="button" role="menuitem" onClick={() => go('leaderboard')}>
-            {COPY.leaderboard.title}
+        <div class="menu-pop" onClick={() => (menuOpen.value = false)}>
+          <button type="button" onClick={() => (modal.value = 'help')}>
+            {COPY.menu.help}
           </button>
-          <button type="button" role="menuitemcheckbox" aria-checked={!muted} onClick={() => app.updateSettings({ muted: !muted })}>
-            {COPY.settings.sound}
-            <span class="switch" data-on={!muted || undefined} aria-hidden="true" />
+          <button type="button" onClick={() => (modal.value = 'leaderboard')}>
+            {COPY.menu.leaderboard}
           </button>
-          <button type="button" role="menuitem" onClick={() => go('settings')}>
-            {COPY.settings.title}
+          <button type="button" onClick={() => (modal.value = 'settings')}>
+            {COPY.menu.settings}
+          </button>
+          <button type="button" class="danger" onClick={() => (modal.value = 'giveUp')}>
+            {COPY.menu.giveUp}
           </button>
         </div>
       )}
@@ -174,305 +95,299 @@ export function Menu() {
   );
 }
 
-// ── The tug of war ──────────────────────────────────────────────
+const menuOpen = signal(false);
 
-/**
- * Who holds the ground, nature from the left and the humans from the right with neutral ground
- * between; the win line at 65%. Below it, the humans' research: four stages, one per era.
- */
-export function RunBar() {
-  frame.value;
-  const g = app.game;
-  const run = g.run;
-  const s = g.shares();
-  const win = BALANCE.territory.winShare;
-  const stage = Math.min(3, Math.floor(run.research));
-  const within = run.research >= 4 ? 1 : run.research - stage;
-  const level = within < 0.4 ? 'calm' : within < 0.75 ? 'alert' : 'danger';
-  const rush = s.nature >= win && run.era < 4;
-  const taming = TAMEABLE.filter((id) => (run.taming[id] ?? 0) > 0.01 && run.defected[id] === undefined);
-  const pct = (v: number) => `${Math.round(v * 100)}%`;
-  return (
-    <div class="runbar">
-      <div class="bars">
-        <div
-          class="bar"
-          data-kind="territory"
-          role="meter"
-          aria-label={`${COPY.run.territory}：${COPY.run.nature} ${pct(s.nature)}，${COPY.run.human} ${pct(s.human)}`}
-          aria-valuenow={Math.round(s.nature * 100)}
-        >
-          <span class="bar-cap leaf" aria-hidden="true" />
-          <span class="bar-track tug">
-            <i class="tug-nature" style={{ width: pct(s.nature) }} />
-            <i class="tug-human" style={{ width: pct(s.human) }} />
-            <b class="tug-goal" style={{ left: pct(win) }} title={run.era === 4 ? COPY.run.goalNow : COPY.run.goal} />
-          </span>
-          <span class="bar-val num">{pct(s.nature)}</span>
-        </div>
-        <div class="bar" data-kind="research" data-level={level} role="meter" aria-label={COPY.run.research} aria-valuenow={Math.floor(run.research * 25)}>
-          <span class="bar-cap">
-            <Thumb model="scientist" crop={0.42} />
-          </span>
-          <span class="bar-track">
-            <i style={{ transform: `scaleX(${Math.max(0.01, run.research / 4)})` }} />
-            {[1, 2, 3].map((e) => (
-              <s key={e} class="era-mark" style={{ left: `${e * 25}%` }} />
-            ))}
-            {run.countermeasures.map((cm, i) => (
-              <b key={i} data-cls={cm.cls} title={`${countermeasureName(cm.cls, cm.era)} · ${CLASSES[cm.cls].name}`} style={{ left: `${(i + 0.5) * 25}%` }} />
-            ))}
-          </span>
-          <span class="bar-val num">{Math.floor(within * 100)}%</span>
-        </div>
-        <div class="era-steps" aria-hidden="true">
-          {([1, 2, 3, 4] as EraId[]).map((e) => (
-            <span key={e} data-era={e} data-on={e === run.era || undefined} data-done={e < run.era || undefined}>
-              {eraName(e)}
-            </span>
-          ))}
-        </div>
-        <div class="bar-note">{rush ? COPY.run.rush : run.era === 4 ? COPY.run.goalNow : COPY.run.goal}</div>
-        <HumanRow />
-      </div>
-      {taming.length > 0 && (
-        <div class="tames">
-          {taming.map((id) => {
-            const v = run.taming[id] ?? 0;
-            const label = `${UNITS[id].name} ${COPY.run.taming} ${Math.floor(v * 100)}%`;
-            return (
-              <span key={id} class="tame" data-hot={v > 0.7 || undefined} style={{ '--p': v }} title={label} aria-label={label}>
-                <Thumb model={id} fill={0.82} />
-              </span>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+// ── The side panel ──────────────────────────────────────────────
 
-/** The humans' purse in one line: what they have, what they earn, what they field. Tap for details. */
-function HumanRow() {
+export function Panel() {
   frame.value;
-  const h = app.game.humanReport();
+  const run = app.game.run;
+  const inc = natureIncome(run, app.game.mods);
   return (
-    <button type="button" class="human-row" onClick={() => (modal.value = 'humans')}>
-      <span class="human-tag">{COPY.humans.label}</span>
-      <span class="num">
-        <span class="orb human" aria-hidden="true" />
-        {formatNumber(Math.floor(h.essence))}
-        <small>
-          {' '}
-          +{formatNumber(Math.round(h.income.total * 10) / 10)}
+    <aside class="panel">
+      <div class="purse">
+        <Essence v={run.essence} />
+        <small class="num">
+          +{fmt(inc.total)}
           {COPY.perSecond}
         </small>
-      </span>
-      <span class="num">
-        {COPY.humans.buildings} {h.buildings}/{h.cap}
-      </span>
-      <span class="num">
-        {COPY.humans.pop} {h.pop}
-      </span>
-    </button>
+      </div>
+      <FoodChain />
+      <nav class="tabs" role="tablist">
+        {(['build', 'evolve'] as const).map((t) => (
+          <button type="button" role="tab" aria-selected={tab.value === t} class={tab.value === t ? 'on' : ''} onClick={() => (tab.value = t)}>
+            {COPY.tabs[t]}
+          </button>
+        ))}
+      </nav>
+      <div class="panel-body">{tab.value === 'build' ? <BuildList /> : <EvolveList />}</div>
+    </aside>
   );
 }
 
-// ── Skills and the rally flag ───────────────────────────────────
-
-const ACTIVE_LOOK: Record<Exclude<ActiveId, 'surge'>, { model: string; crop?: number }> = {
-  rescue: { model: 'wolf' },
-  rampage: { model: 'mammoth' },
-  sabotage: { model: 'scientist', crop: 0.42 },
-};
-
-interface SkillProps {
-  kind: string;
-  label: string;
-  look: { model: string; crop?: number };
-  cd?: number;
-  cdTotal?: number;
-  live?: number;
-  disabled?: boolean;
-  pressed?: boolean;
-  badge?: ComponentChildren;
-  face?: ComponentChildren;
-  onClick: () => void;
-}
-
-function Skill({ kind, label, look, cd = 0, cdTotal = 1, live = 0, disabled, pressed, badge, face, onClick }: SkillProps) {
-  const cooling = cd > 0 && live <= 0;
+/** The food chain as a three-step pyramid: who eats what, and how full each layer is. */
+function FoodChain() {
+  const game = app.game;
+  const run = game.run;
+  const food = natureFood(run, game.mods);
+  const count = (ids: readonly NatureUnitId[]) => ids.map((id) => ({ id, n: run.units.filter((u) => u.kind === id).length }));
+  const meadows = run.buildings.filter((b) => b.kind === 'meadow').length;
+  const row = (label: string, units: { id: NatureUnitId; n: number }[], line: { supply: number; demand: number }, diet: 'grass' | 'meat') => {
+    const hungry = run.units.some((u) => u.hungry && UNITS[u.kind].diet === diet);
+    const full = line.supply > 0 && line.demand / line.supply > 0.95;
+    return (
+      <div class="chain-row" data-diet={diet} data-hungry={hungry || undefined}>
+        <span class="chain-label">{label}</span>
+        <span class="chain-units">
+          {units.map((u) => (
+            <span class="chain-unit" data-none={u.n === 0 || undefined} title={UNITS[u.id].name}>
+              <Pic k={`unit/${u.id}/walk0`} scale={1} />
+              <b class="num">{u.n}</b>
+            </span>
+          ))}
+        </span>
+        <span class="chain-meter">
+          <Bar value={line.supply > 0 ? line.demand / line.supply : 0} tone={diet} />
+          <small class="num">
+            <Pic k={`icon/${diet}`} scale={1} />
+            {fmt(line.demand)}/{fmt(line.supply)}
+            {hungry ? ` ${COPY.chain.hungry}` : full ? ` ${COPY.chain.full}` : ''}
+          </small>
+        </span>
+      </div>
+    );
+  };
   return (
-    <button
-      type="button"
-      class="skill"
-      data-skill={kind}
-      data-live={live > 0 || pressed || undefined}
-      data-ready={(!disabled && !cooling && live <= 0) || undefined}
-      disabled={disabled || cooling || live > 0}
-      aria-label={label}
-      aria-pressed={pressed}
-      title={label}
-      onClick={onClick}
-    >
-      <span class="skill-face">
-        {face}
-        <Thumb {...look} fill={0.8} />
-      </span>
-      {cooling && (
-        <span class="skill-cd" style={{ '--p': Math.min(1, cd / cdTotal) }}>
-          <b class="num">{formatDuration(cd)}</b>
+    <section class="chain" title={COPY.chain.help}>
+      {row(COPY.chain.predators, count(PREDATORS), food.meat, 'meat')}
+      {row(COPY.chain.herbivores, count(HERBIVORES), food.grass, 'grass')}
+      <div class="chain-row plants">
+        <span class="chain-label">{COPY.chain.plants}</span>
+        <span class="chain-units">
+          <span class="chain-unit" data-none={meadows === 0 || undefined}>
+            <Pic k="building/meadow" scale={1} />
+            <b class="num">{meadows}</b>
+          </span>
         </span>
-      )}
-      {live > 0 && (
-        <span class="skill-cd live">
-          <b class="num">{Math.ceil(live)}</b>
-        </span>
-      )}
-      {badge !== undefined && <span class="skill-badge num">{badge}</span>}
-    </button>
+        <small class="chain-note">{COPY.chain.help}</small>
+      </div>
+    </section>
   );
 }
 
-/** Active skills, the tide and the rally flag: round buttons in one row. */
-export function SkillDock() {
-  frame.value;
-  const g = app.game;
-  if (!g.running) return null;
-  const actives = (['rescue', 'rampage', 'sabotage'] as const).filter((id) => g.mods.actives[id]);
-  const fire = (id: ActiveId) => (g.activate(id) ? app.sfx.surge() : app.sfx.deny());
-  const flag = !!g.run.rally;
+const GROUPS: { key: keyof typeof COPY.build.groups; kinds: NatureBuildingId[] }[] = [
+  { key: 'chain', kinds: ['meadow'] },
+  { key: 'herbivores', kinds: ['anthill', 'glade', 'valley'] },
+  { key: 'predators', kinds: ['den', 'sabercave', 'bearcave'] },
+  { key: 'defense', kinds: ['ancient'] },
+];
+
+function laneName(pad: number): string {
+  const p = PADS[pad]!;
+  return `${COPY.build.lanes[p.lane]}${p.home ? '' : `${COPY.build.front}`}`;
+}
+
+function BuildList() {
+  const game = app.game;
+  const run = game.run;
+  const pad = selectedPad.value;
+  const padOk = pad !== null && padUser(run, pad) === 'nature';
+  const holding = placing.value;
   return (
-    <div class="skills">
-      <Skill
-        kind="rally"
-        label={rallying.value ? COPY.rally.hint : flag ? COPY.rally.clear : COPY.rally.set}
-        look={{ model: 'flag' }}
-        pressed={rallying.value || flag}
-        onClick={() => (flag && !rallying.value ? app.clearRally() : app.toggleRally())}
-      />
-      {g.mods.tide && <Surge />}
-      {actives.map((id) => (
-        <Skill
-          key={id}
-          kind={id}
-          label={COPY.actives[id]}
-          look={ACTIVE_LOOK[id]}
-          cd={g.cooldown(id)}
-          cdTotal={BALANCE.actives[id].cooldown}
-          live={id === 'rampage' ? g.run.rampageLeft : 0}
-          onClick={() => fire(id)}
-        />
+    <div class="build">
+      <p class="hint">
+        {holding
+          ? COPY.build.placing(BUILDINGS[holding].name)
+          : padOk
+            ? COPY.build.onPad(laneName(pad!))
+            : COPY.build.pickPad}
+      </p>
+      {holding && (
+        <div class="row gap">
+          <button type="button" class="btn green small" onClick={() => app.build(holding, null)}>
+            {COPY.build.auto}
+          </button>
+          <button type="button" class="btn plain small" onClick={() => (placing.value = null)}>
+            {COPY.build.cancel}
+          </button>
+        </div>
+      )}
+      {GROUPS.map((g) => (
+        <>
+          <h3>{COPY.build.groups[g.key]}</h3>
+          <div class="cards">
+            {g.kinds.map((k) => (
+              <BuildCard kind={k} pad={padOk ? pad : null} />
+            ))}
+          </div>
+        </>
       ))}
     </div>
   );
 }
 
-function Surge() {
-  frame.value;
-  const g = app.game;
-  const t = g.run.tide;
-  const level = t.surgeLeft > 0 ? 1 : tideLevel(t.clock);
+function buildInfo(kind: NatureBuildingId): string {
+  const game = app.game;
+  const def = BUILDINGS[kind];
+  if (kind === 'meadow') return COPY.build.grass(fmt(meadowGrass(game.run, game.mods)));
+  if (def.makes) {
+    const u = def.makes as NatureUnitId;
+    const ud = UNITS[u];
+    const parts = [COPY.build.every(Math.round(spawnInterval(kind, game.mods) * 10) / 10), COPY.build.eats(FOOD_NAME[ud.diet], fmt(unitEat(u, game.mods), 2))];
+    if (ud.meat > 0) parts.push(COPY.build.feeds(fmt(unitMeat(u, game.mods), 2)));
+    return parts.join(' · ');
+  }
+  return def.role;
+}
+
+function BuildCard({ kind, pad }: { kind: NatureBuildingId; pad: number | null }) {
+  const game = app.game;
+  const def = BUILDINGS[kind];
+  const cost = game.buildCost(kind);
+  const afford = game.run.essence >= cost;
+  const on = placing.value === kind;
+  const go = () => {
+    if (!afford) {
+      app.sfx.deny();
+      pushToast({ title: COPY.build.problem.money, tone: 'bad' }, 1400);
+      return;
+    }
+    if (pad !== null) {
+      app.build(kind, pad);
+      return;
+    }
+    placing.value = on ? null : kind;
+    selectedBuilding.value = null;
+  };
   return (
-    <Skill
-      kind="surge"
-      label={`${COPY.actives.surge} · ${COPY.tide.name} ×${tideMult(t, g.mods).toFixed(1)}`}
-      look={{ model: 'shark' }}
-      cd={g.cooldown('surge')}
-      cdTotal={g.mods.surgeCooldown}
-      live={t.surgeLeft}
-      disabled={!g.mods.actives.surge}
-      badge={`×${tideMult(t, g.mods).toFixed(1)}`}
-      face={<i class="water" style={{ transform: `scaleY(${0.12 + level * 0.88})` }} />}
-      onClick={() => (g.activate('surge') ? app.sfx.surge() : app.sfx.deny())}
-    />
+    <button type="button" class={`bcard ${on ? 'on' : ''}`} data-afford={afford || undefined} onClick={go}>
+      <Pic k={`building/${kind}`} scale={1} class="bcard-pic" />
+      <span class="bcard-text">
+        <b>{def.name}</b>
+        <small>{def.makes ? COPY.build.makes(UNITS[def.makes].name) : def.role}</small>
+        <small class="muted">{buildInfo(kind)}</small>
+      </span>
+      <span class="price">
+        <Essence v={cost} />
+      </span>
+    </button>
   );
 }
 
-// ── Placing a building ──────────────────────────────────────────
+function levelPic(id: LevelId): string {
+  if (id === 'mothertree' || id === 'meadow' || id === 'ancient') return `building/${id}`;
+  return `unit/${id}/walk0`;
+}
 
-export function PlacementBar() {
-  frame.value;
-  const kind = placing.value;
-  if (!kind && !rallying.value) return null;
-  if (rallying.value) {
-    return (
-      <div class="placebar" role="status">
-        <b>{COPY.rally.hint}</b>
-        <div class="placebar-actions">
-          <button type="button" class="chunk" data-tone="plain" onClick={() => app.toggleRally()}>
-            {COPY.build.cancel}
-          </button>
-        </div>
-      </div>
-    );
+function levelEffect(id: LevelId): string {
+  const game = app.game;
+  const run = game.run;
+  if (id === 'mothertree') {
+    const tree = mainOf(run, 'nature');
+    return COPY.evolve.effect.mothertree(fmt(motherIncome(run, game.mods)), fmt(tree?.maxHp ?? 0, 0));
   }
-  const def = BUILDINGS[kind!];
-  const enemy = app.game.mods.enemyGround[kind as never];
+  if (id === 'meadow') return COPY.evolve.effect.meadow(fmt(meadowGrass(run, game.mods)));
+  if (id === 'ancient') return COPY.evolve.effect.ancient(fmt(towerDmg('ancient', run, game.mods)));
+  return COPY.evolve.effect.unit(fmt(unitMaxHp(id, run, game.mods), 0), fmt(unitAtk(id, run, game.mods)));
+}
+
+function EvolveList() {
+  const game = app.game;
   return (
-    <div class="placebar" role="status">
-      <b>
-        {COPY.build.placing(def.name)} · <Essence value={app.game.buildingCost(kind!)} />
-      </b>
-      <span class="placebar-key">
-        <i data-tone="own" />
-        {COPY.build.hintOwn}
-      </span>
-      <span class="placebar-key">
-        <i data-tone="wild" />
-        {COPY.build.hintWild}
-      </span>
-      {enemy && (
-        <span class="placebar-key">
-          <i data-tone="enemy" />
-          {COPY.build.hintEnemy}
-        </span>
-      )}
-      <div class="placebar-actions">
-        <button type="button" class="chunk" onClick={() => app.autoPlace()}>
-          {COPY.build.auto}
-        </button>
-        <button type="button" class="chunk" data-tone="plain" onClick={() => app.cancelPlacing()}>
-          {COPY.build.cancel}
-        </button>
+    <div class="evolve">
+      <p class="hint">{COPY.evolve.hint}</p>
+      <div class="cards">
+        {LEVEL_IDS.map((id) => {
+          const cost = game.levelCost(id);
+          const afford = game.run.essence >= cost;
+          return (
+            <div class="bcard" data-afford={afford || undefined}>
+              <Pic k={levelPic(id)} scale={1} class="bcard-pic" />
+              <span class="bcard-text">
+                <b>
+                  {COPY.evolve.names[id]} <span class="lv">{COPY.evolve.level(game.run.levels[id])}</span>
+                </b>
+                <small class="muted">{levelEffect(id)}</small>
+              </span>
+              <button
+                type="button"
+                class={`btn ${afford ? 'gold' : 'grey'} small`}
+                onClick={() => {
+                  if (game.levelUp(id)) app.sfx.upgrade();
+                  else app.sfx.deny();
+                }}
+              >
+                {COPY.evolve.up}
+                <Essence v={cost} />
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-// ── Ambient ─────────────────────────────────────────────────────
+// ── A building's card, pinned over it on the map ────────────────
 
-function sceneCenter(): { x: number; y: number } {
-  const ins = viewInsets.value;
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  return { x: ins.left + (w - ins.left - ins.right) / 2, y: ins.top + Math.max(1, h - ins.top - ins.bottom) / 2 };
+export function BuildingCard() {
+  frame.value;
+  const id = selectedBuilding.value;
+  if (id === null) return null;
+  const game = app.game;
+  const b = game.run.buildings.find((x) => x.id === id);
+  const at = app.buildingScreen(id);
+  if (!b || !at) return null;
+  const def = BUILDINGS[b.kind];
+  const lane = b.pad >= 0 ? COPY.build.lanes[PADS[b.pad]!.lane] : null;
+  const left = Math.max(8, Math.min(window.innerWidth - 228, at.x - 110));
+  const top = Math.max(8, at.top - 8);
+  return (
+    <div class="bpop" style={{ left: `${left}px`, top: `${top}px` }} data-side={b.side}>
+      <header>
+        <b>{def.name}</b>
+        <button type="button" class="close" aria-label="关闭" onClick={() => (selectedBuilding.value = null)}>
+          ×
+        </button>
+      </header>
+      <div class="foe-row">
+        <span>{b.progress < 1 ? COPY.building.building : COPY.building.hp}</span>
+        <Bar value={b.progress < 1 ? b.progress : b.hp / b.maxHp} tone={b.progress < 1 ? 'gold' : b.side} />
+        <small class="num">
+          {Math.ceil(b.hp)}/{Math.ceil(b.maxHp)}
+        </small>
+      </div>
+      <p>
+        {b.pad < 0 ? (b.side === 'nature' ? COPY.building.main : COPY.building.lodgeMain) : def.makes ? `${COPY.build.makes(UNITS[def.makes].name)} · ${COPY.building.lane(lane!)}` : def.role}
+      </p>
+      {b.blocked && b.side === 'nature' && <p class="warn">{COPY.building.blocked[b.blocked]}</p>}
+      {b.side === 'human' && b.pad >= 0 && <p class="muted">{COPY.building.humanSide}</p>}
+      {b.side === 'nature' && b.pad >= 0 && (
+        <button
+          type="button"
+          class="btn red small"
+          onClick={() => {
+            game.demolish(b.id);
+            selectedBuilding.value = null;
+            app.sfx.click();
+          }}
+        >
+          {COPY.building.demolish}
+        </button>
+      )}
+    </div>
+  );
 }
 
-/** Now and then a headline pops up over the map, then goes away. */
-export function NewsBubble() {
-  const [line, setLine] = useState<{ id: number; text: string } | null>(null);
-  useEffect(() => {
-    let n = Math.floor(Math.random() * 100);
-    let timer: ReturnType<typeof setTimeout>;
-    const show = () => {
-      const era = app.game.run.era;
-      const seen = ([1, 2, 3, 4] as EraId[]).filter((e) => e <= era).flatMap((e) => NEWS[e]);
-      const pool = n % 3 === 0 ? seen : NEWS[era];
-      n++;
-      if (modal.value === null && app.game.running && !placing.value) setLine({ id: n, text: pool[n % pool.length]! });
-      timer = setTimeout(() => {
-        setLine(null);
-        timer = setTimeout(show, 26000 + Math.random() * 20000);
-      }, 6500);
-    };
-    timer = setTimeout(show, 20000);
-    return () => clearTimeout(timer);
-  }, []);
-  if (!line) return null;
+export function Toasts() {
   return (
-    <div class="bubble" key={line.id} aria-live="polite" style={{ left: `${sceneCenter().x}px` }}>
-      {line.text}
+    <div class="toasts" aria-live="polite">
+      {toasts.value.map((t) => (
+        <div class="toast" data-tone={t.tone} key={t.id}>
+          <b>{t.title}</b>
+          {t.body && <small>{t.body}</small>}
+        </div>
+      ))}
     </div>
   );
 }
