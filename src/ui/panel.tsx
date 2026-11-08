@@ -1,37 +1,27 @@
 import type { JSX } from 'preact';
 import { useState } from 'preact/hooks';
 import {
-  BALANCE,
   BRANCHES,
   BRANCH_NAMES,
-  CREATURES,
-  DOMESTICS,
+  BUILDINGS,
   META_UPGRADES,
-  creatureCost,
-  creatureCostN,
-  creaturesOfEra,
-  formatDuration,
-  isCreatureVisible,
+  NATURE_BUILDINGS,
+  SKILLS,
   meets,
   metaFree,
   metaLevel,
-  milestonesReached,
-  nextMilestone,
   skillStatus,
   skillsOfBranch,
   type Branch,
-  type CreatureDef,
-  type EraId,
+  type BuildingDef,
   type MetaUpgradeDef,
+  type NatureBuildingId,
   type SkillDef,
-  type UpgradeDef,
 } from '../core/index.ts';
-import { Money, Num, Thumb } from './common.tsx';
-import { COPY } from './copy.ts';
+import { Essence, Num, Thumb } from './common.tsx';
+import { COPY, eraName } from './copy.ts';
 import { describeEffects, describeMeta, describeNeed } from './describe.ts';
-import { app, detail, frame, modal, sheet, tab, type Tab } from './store.ts';
-
-const AMOUNTS = [1, 10, 100, 'max'] as const;
+import { app, detailKind, frame, modal, placing, sheet, tab, type Tab } from './store.ts';
 
 export interface PanelProps {
   /** Pointer down on the header: the shell decides whether it becomes a drag. */
@@ -53,16 +43,11 @@ export function openTab(v: Tab): void {
 export function Panel({ onGrab, justDragged }: PanelProps) {
   frame.value;
   const g = app.game;
-  const amount = app.settings.value.buyAmount;
   const tabs: { value: Tab; label: string; badge: number | 'dot' }[] = [
-    { value: 'creatures', label: COPY.tabs.creatures, badge: 0 },
-    { value: 'skills', label: COPY.tabs.skills, badge: g.running ? skillCount() + boostCount() : 0 },
+    { value: 'build', label: COPY.tabs.build, badge: 0 },
+    { value: 'skills', label: COPY.tabs.skills, badge: g.running ? skillCount() : 0 },
     { value: 'meta', label: COPY.tabs.meta, badge: metaFree(g.meta) > 0 ? 'dot' : 0 },
   ];
-  const cycle = () => {
-    const next = AMOUNTS[(AMOUNTS.indexOf(amount) + 1) % AMOUNTS.length]!;
-    app.updateSettings({ buyAmount: next });
-  };
   return (
     <aside class="panel" aria-label="商店">
       <div class="panel-head" onPointerDown={onGrab}>
@@ -84,14 +69,9 @@ export function Panel({ onGrab, justDragged }: PanelProps) {
             </button>
           ))}
         </div>
-        {tab.value === 'creatures' && (
-          <button type="button" class="amount num" aria-label="购买数量" onClick={cycle}>
-            {COPY.buyAmounts[String(amount)]}
-          </button>
-        )}
       </div>
       <div class="panel-body">
-        {tab.value === 'creatures' && <CreatureGrid />}
+        {tab.value === 'build' && <BuildShop />}
         {tab.value === 'skills' && <SkillTree />}
         {tab.value === 'meta' && <MetaShop />}
       </div>
@@ -101,185 +81,132 @@ export function Panel({ onGrab, justDragged }: PanelProps) {
 
 function skillCount(): number {
   const g = app.game;
-  let n = 0;
-  for (const b of BRANCHES) {
-    for (const s of skillsOfBranch(b)) {
-      if (skillStatus(g.run, g.mods, s) === 'available' && g.skillCost(s.id).lte(g.run.money)) n++;
-    }
-  }
-  return n;
+  return SKILLS.filter((s) => skillStatus(g.run, g.mods, s) === 'available' && s.cost <= g.run.essence).length;
 }
 
-function boostCount(): number {
-  const g = app.game;
-  return g.availableUpgrades().filter((u) => u.kind === 'creature' && g.upgradeCost(u.id).lte(g.run.money)).length;
-}
-
-// ── Creatures ───────────────────────────────────────────────────
-
-function CreatureGrid() {
+/** Buildings in use out of the slots the ground allows. */
+function Slots() {
   frame.value;
   const g = app.game;
-  const visible = CREATURES.filter((c) => isCreatureVisible(g.run, c.id));
-  const ticket = g.availableUpgrades().find((u) => u.kind === 'era');
+  const n = g.buildingCount();
+  const cap = g.buildingCap();
   return (
-    <>
-      {ticket && <TicketCard def={ticket} />}
-      <div class="grid">
-        {[...visible].reverse().map((c) => (
-          <CreatureTile key={c.id} def={c} />
-        ))}
-      </div>
-    </>
-  );
-}
-
-function CreatureTile({ def }: { def: CreatureDef }) {
-  frame.value;
-  const g = app.game;
-  const run = g.run;
-  const defected = run.defected[def.id];
-  const open = () => {
-    detail.value = def.id;
-    modal.value = 'creature';
-  };
-  if (defected !== undefined) {
-    const to = DOMESTICS[def.tame!];
-    return (
-      <div class="tile" data-cls={def.cls} data-defected>
-        <button type="button" class="tile-pic" aria-label={COPY.creatures.defected(to.name)} onClick={open}>
-          <Thumb model={to.model} />
-          <span class="tile-count num">
-            <Num value={defected} />
-          </span>
-        </button>
-        <div class="tile-name">{def.name}</div>
-        <span class="stamp" aria-hidden="true">
-          {COPY.creatures.stamp}
-        </span>
-      </div>
-    );
-  }
-  const c = run.creatures[def.id];
-  const pref = app.settings.value.buyAmount;
-  const n = pref === 'max' ? Math.max(1, g.buyCount(def.id, 'max')) : pref;
-  const cost = n === 1 ? creatureCost(def.id, c.bought) : creatureCostN(def.id, c.bought, n);
-  const next = nextMilestone(c.bought);
-  const reached = milestonesReached(c.bought);
-  const prev = reached > 0 ? BALANCE.milestones[reached - 1]! : 0;
-  const progress = next ? (c.bought - prev) / (next - prev) : 1;
-  const fresh = c.bought + c.bred === 0;
-  const taming = run.taming[def.id] ?? 0;
-  const tamingShown = taming > 0.01;
-  const wrecked = run.lairs[def.id] ?? 0;
-  const raided = run.raid?.target === def.id;
-  return (
-    <div
-      class="tile"
-      data-cls={def.cls}
-      data-fresh={fresh || undefined}
-      data-hot={taming > 0.7 || undefined}
-      data-wrecked={wrecked > 0 || undefined}
-      data-raided={raided || undefined}
-    >
-      <button type="button" class="tile-pic" aria-label={def.name} onClick={open}>
-        <Thumb model={def.model} />
-        {c.bought > 0 && (
-          <span class="tile-count num">
-            <Num value={c.bought} />
-          </span>
-        )}
-        {c.bred >= 1 && (
-          <span class="tile-bred num">
-            +<Num value={c.bred} />
-          </span>
-        )}
-        {wrecked > 0 && (
-          <span class="tile-wreck num" title={COPY.lairs.wrecked(formatDuration(wrecked))}>
-            {COPY.lairs.wreckedShort} {Math.ceil(wrecked)}
-          </span>
-        )}
-      </button>
-      <div class="tile-name">{def.name}</div>
-      <span class="tile-bar" data-taming={tamingShown || undefined} aria-hidden="true">
-        <i style={{ transform: `scaleX(${Math.max(0.03, Math.min(1, tamingShown ? taming : progress))})` }} />
-      </span>
-      <button
-        type="button"
-        class="buy chunk"
-        disabled={!g.running || cost.gt(run.money)}
-        onClick={() => (g.buyCreature(def.id, pref) > 0 ? app.sfx.buy() : app.sfx.deny())}
-      >
-        <Money value={cost} />
-        {n > 1 && (
-          <span class="buy-n num">
-            ×<Num value={n} />
-          </span>
-        )}
-      </button>
+    <div class="slots" data-full={n >= cap || undefined}>
+      <b class="num">{COPY.build.slots(n, cap)}</b>
+      <span>{n >= cap ? COPY.build.full : COPY.build.slotsHint}</span>
     </div>
   );
 }
 
-/** The next era: its name, a peek at what lives there, and the price. */
-function TicketCard({ def }: { def: UpgradeDef }) {
-  frame.value;
+// ── Buildings ───────────────────────────────────────────────────
+
+/** Is a nature building shown in the shop, and if not open yet, why. */
+function shopState(id: NatureBuildingId): 'open' | 'era' | 'skill' | 'defected' | 'hidden' {
   const g = app.game;
-  const cost = g.upgradeCost(def.id);
-  const era = def.effects.find((e) => e.type === 'unlockEra');
-  const eraId = (era && era.type === 'unlockEra' ? era.era : def.era) as EraId;
+  const def = BUILDINGS[id];
+  if (g.kindOpen(id)) return 'open';
+  if (def.spawns.every((s) => g.run.defected[s.unit as never] !== undefined)) return 'defected';
+  if (def.skill) return g.mods.unlocked[id] ? 'era' : 'skill';
+  if (def.era === g.run.era + 1) return 'era';
+  return 'hidden';
+}
+
+function BuildShop() {
+  frame.value;
+  const list = NATURE_BUILDINGS.map((id) => ({ id, state: shopState(id) })).filter((x) => x.state !== 'hidden');
+  const open = list.filter((x) => x.state === 'open');
+  const later = list.filter((x) => x.state !== 'open');
   return (
-    <div class="ticket" data-era={eraId}>
-      <div class="ticket-text">
-        <div class="ticket-name">{def.name}</div>
-        <div class="ticket-peek" aria-hidden="true">
-          {creaturesOfEra(eraId).map((c) => (
-            <Thumb key={c.id} model={c.model} />
+    <>
+      <Slots />
+      <div class="grid">
+        {open.map(({ id }) => (
+          <BuildTile key={id} def={BUILDINGS[id]} />
+        ))}
+      </div>
+      {later.length > 0 && (
+        <div class="grid later">
+          {later.map(({ id, state }) => (
+            <BuildTile key={id} def={BUILDINGS[id]} locked={state as 'era' | 'skill' | 'defected'} />
           ))}
         </div>
-      </div>
-      <button type="button" class="buy chunk" disabled={cost.gt(g.run.money)} onClick={() => g.buyUpgrade(def.id) || app.sfx.deny()}>
-        <Money value={cost} />
+      )}
+    </>
+  );
+}
+
+function BuildTile({ def, locked }: { def: BuildingDef; locked?: 'era' | 'skill' | 'defected' }) {
+  frame.value;
+  const g = app.game;
+  const cost = g.buildingCost(def.id);
+  const owned = g.run.buildings.filter((b) => b.side === 'nature' && b.kind === def.id).length;
+  const full = g.buildingCount() >= g.buildingCap();
+  const poor = cost > g.run.essence;
+  const active = placing.value === def.id;
+  const info = () => {
+    detailKind.value = def.id;
+    modal.value = 'kind';
+  };
+  const buy = () => {
+    if (active) return app.cancelPlacing();
+    if (locked || full || poor) return app.sfx.deny();
+    app.startPlacing(def.id);
+  };
+  return (
+    <div class="tile build-tile" data-era={def.era} data-locked={locked || undefined} data-active={active || undefined}>
+      <button type="button" class="tile-pic" aria-label={`${def.name}：${def.desc}`} onClick={info}>
+        <Thumb model={def.model} />
+        {owned > 0 && (
+          <span class="tile-count num">
+            <Num value={owned} />
+          </span>
+        )}
+        {def.near && <span class="tile-need">{COPY.build.need[def.near]}</span>}
+        {(def.aura || def.blocks) && <span class="tile-effect">{COPY.aura.effect}</span>}
+        <span class="tile-makes" aria-hidden="true">
+          {def.spawns
+            .filter((s) => !s.if)
+            .map((s) => (
+              <Thumb key={s.unit} model={s.unit} fill={0.85} />
+            ))}
+        </span>
       </button>
+      <div class="tile-name">{def.name}</div>
+      {locked ? (
+        <div class="tile-lock">
+          {locked === 'skill' ? COPY.build.skillLocked : locked === 'defected' ? COPY.build.defected : COPY.build.eraLocked(eraName(def.era))}
+        </div>
+      ) : (
+        <button type="button" class="buy chunk" data-active={active || undefined} disabled={!g.running || (!active && (full || poor))} onClick={buy}>
+          {active ? COPY.build.cancel : <Essence value={cost} />}
+        </button>
+      )}
     </div>
   );
 }
 
 // ── Skills ──────────────────────────────────────────────────────
 
-type BranchTab = Branch | 'boosts';
-
 function SkillTree() {
   frame.value;
-  const [branch, setBranch] = useState<BranchTab>('assassin');
+  const [branch, setBranch] = useState<Branch>('general');
   const g = app.game;
-  const tabs: BranchTab[] = [...BRANCHES, 'boosts'];
-  const count = (b: BranchTab) =>
-    b === 'boosts'
-      ? boostCount()
-      : skillsOfBranch(b).filter((s) => skillStatus(g.run, g.mods, s) === 'available' && g.skillCost(s.id).lte(g.run.money)).length;
+  const count = (b: Branch) => skillsOfBranch(b).filter((s) => skillStatus(g.run, g.mods, s) === 'available' && s.cost <= g.run.essence).length;
+  const order: Branch[] = ['general', ...BRANCHES.filter((b) => b !== 'general')];
   return (
     <>
       <div class="branches" role="tablist" aria-label="技能分支">
-        {tabs.map((b) => {
+        {order.map((b) => {
           const n = count(b);
           return (
-            <button
-              type="button"
-              role="tab"
-              key={b}
-              class="branch"
-              data-cls={b}
-              aria-selected={branch === b}
-              onClick={() => setBranch(b)}
-            >
-              {b === 'boosts' ? COPY.skills.boosts : BRANCH_NAMES[b]}
+            <button type="button" role="tab" key={b} class="branch" data-cls={b} aria-selected={branch === b} onClick={() => setBranch(b)}>
+              {BRANCH_NAMES[b]}
               {n > 0 && <span class="badge num">{n}</span>}
             </button>
           );
         })}
       </div>
-      {branch === 'boosts' ? <Boosts /> : <BranchNodes branch={branch} />}
+      <BranchNodes branch={branch} />
     </>
   );
 }
@@ -320,8 +247,7 @@ function SkillNode({ def }: { def: SkillDef }) {
   frame.value;
   const g = app.game;
   const status = skillStatus(g.run, g.mods, def);
-  const cost = g.skillCost(def.id);
-  const affordable = status === 'available' && cost.lte(g.run.money) && g.running;
+  const affordable = status === 'available' && def.cost <= g.run.essence && g.running;
   const need = status === 'locked' ? def.req.find((r) => !meets(g.run, r)) : undefined;
   return (
     <button
@@ -338,52 +264,12 @@ function SkillNode({ def }: { def: SkillDef }) {
       </span>
       {status === 'available' && (
         <span class="price num">
-          <Money value={cost} />
+          <Essence value={def.cost} />
         </span>
       )}
       {status === 'locked' && need && <span class="need">{describeNeed(need)}</span>}
       {status === 'forkLocked' && <span class="need">{COPY.skills.forkLocked}</span>}
     </button>
-  );
-}
-
-function Boosts() {
-  frame.value;
-  const g = app.game;
-  const list = g
-    .availableUpgrades()
-    .filter((u) => u.kind === 'creature')
-    .map((u) => ({ u, cost: g.upgradeCost(u.id) }))
-    .sort((a, b) => (a.cost.lt(b.cost) ? -1 : 1));
-  if (!list.length) return <p class="empty">{COPY.skills.empty}</p>;
-  return (
-    <div class="boosts">
-      {list.map(({ u, cost }) => {
-        const creature = CREATURES.find((c) => u.effects.some((e) => e.type === 'creatureMult' && e.creature === c.id));
-        const affordable = g.running && cost.lte(g.run.money);
-        return (
-          <button
-            type="button"
-            key={u.id}
-            class="node boost"
-            data-cls={creature?.cls}
-            data-status="available"
-            data-afford={affordable || undefined}
-            disabled={!affordable}
-            onClick={() => (g.buyUpgrade(u.id) ? app.sfx.upgrade() : app.sfx.deny())}
-          >
-            {creature && <Thumb model={creature.model} class="node-pic" />}
-            <span class="node-main">
-              <span class="node-name">{u.name}</span>
-              <span class="effect">{describeEffects(u.effects)}</span>
-            </span>
-            <span class="price num">
-              <Money value={cost} />
-            </span>
-          </button>
-        );
-      })}
-    </div>
   );
 }
 
@@ -419,7 +305,6 @@ function MetaShop() {
               const shown = next ?? def.levels[def.levels.length - 1]!;
               const max = def.levels.length;
               const affordable = !!next && next.cost <= free;
-              // Routes and forks are named by what they unlock; the section says what kind it is.
               const effect = shown.effects
                 .filter((e) => e.type !== 'unlockRoute' && e.type !== 'unlockFork')
                 .map(describeMeta)
@@ -463,3 +348,4 @@ function MetaShop() {
     </>
   );
 }
+

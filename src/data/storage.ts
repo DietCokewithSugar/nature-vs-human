@@ -59,12 +59,11 @@ export function clearGame(): void {
 export interface Settings {
   muted: boolean;
   quality: 'high' | 'low';
-  buyAmount: 1 | 10 | 100 | 'max';
 }
 
 export function defaultSettings(): Settings {
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return { muted: false, quality: coarse ? 'low' : 'high', buyAmount: 1 };
+  return { muted: false, quality: coarse ? 'low' : 'high' };
 }
 
 export function loadSettings(): Settings {
@@ -76,7 +75,6 @@ export function loadSettings(): Settings {
     return {
       muted: typeof raw.muted === 'boolean' ? raw.muted : base.muted,
       quality: raw.quality === 'low' || raw.quality === 'high' ? raw.quality : base.quality,
-      buyAmount: [1, 10, 100, 'max'].includes(raw.buyAmount as never) ? (raw.buyAmount as Settings['buyAmount']) : 1,
     };
   } catch {
     return base;

@@ -1,6 +1,6 @@
 import type { JSX } from 'preact';
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
-import { Counter, DisasterBanner, MapButton, Menu, NewsBubble, RaidMarker, RunBar, SkillDock, TapHint } from './hud.tsx';
+import { Counter, DisasterBanner, MapButton, Menu, NewsBubble, PlacementBar, RunBar, SkillDock, SkyBar } from './hud.tsx';
 import { Flash, Floats, Modals, Toasts } from './overlays.tsx';
 import { Panel } from './panel.tsx';
 import { sheet, viewInsets, type Insets, type Sheet } from './store.ts';
@@ -136,6 +136,7 @@ export function App({ onInsets }: AppProps) {
   return (
     <>
       <div class="hud" ref={hud} data-layout={mobile ? 'sheet' : 'side'} data-sheet={state} style={{ '--sheet-h': mobile ? `${heights[state]}px` : '' }}>
+        <SkyBar />
         <header class="topbar">
           <Counter />
           <RunBar />
@@ -143,12 +144,11 @@ export function App({ onInsets }: AppProps) {
         </header>
         <MapButton />
         <DisasterBanner />
+        <PlacementBar />
         <SkillDock />
         <Panel onGrab={onGrab} justDragged={() => performance.now() - dragEnd.current < 250} />
         <NewsBubble />
-        <TapHint />
       </div>
-      <RaidMarker />
       <Floats />
       <Toasts />
       <Flash />

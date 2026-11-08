@@ -2,24 +2,51 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   BALANCE,
+  BUILDINGS,
   CLASSES,
-  CREATURE_BY_ID,
-  CREATURES,
   DISASTERS,
-  LAIRS,
   TAMEABLE,
-  bredPerSec,
+  UNITS,
   countermeasureName,
+  dayOf,
   formatDuration,
   formatNumber,
+  hourOf,
   tideLevel,
   tideMult,
   type ActiveId,
   type EraId,
 } from '../core/index.ts';
-import { Money, Num, SCIENTIST, Thumb } from './common.tsx';
-import { COPY, NEWS } from './copy.ts';
-import { app, frame, modal, viewInsets } from './store.ts';
+import { Essence, Thumb } from './common.tsx';
+import { COPY, NEWS, eraName } from './copy.ts';
+import { app, frame, modal, placing, rallying, viewInsets } from './store.ts';
+
+// ── The sky: sun and moon across the very top ───────────────────
+
+/**
+ * The day as a strip: night blue at both ends, dawn and dusk orange, noon sky blue.
+ * The sun (or the moon) rides along it at the current hour.
+ */
+export function SkyBar() {
+  frame.value;
+  const t = app.game.run.time;
+  const h = hourOf(t);
+  const night = h < 5.5 || h >= 19;
+  const hh = Math.floor(h);
+  const mm = Math.floor((h - hh) * 60 / 10) * 10;
+  return (
+    <div class="skybar" role="timer" aria-label={`${COPY.sky.day(dayOf(t) + 1)} ${COPY.sky.clock(hh, mm)}`}>
+      <div class="sky-track">
+        <span class="sky-body" data-night={night || undefined} style={{ left: `${(h / 24) * 100}%` }} aria-hidden="true" />
+      </div>
+      <span class="sky-label num">
+        {COPY.sky.day(dayOf(t) + 1)} · {COPY.sky.clock(hh, mm)}
+      </span>
+    </div>
+  );
+}
+
+// ── 自然之元 ─────────────────────────────────────────────────────
 
 export function Counter() {
   frame.value;
@@ -28,11 +55,11 @@ export function Counter() {
     <div class="counter">
       <span class="coin" aria-hidden="true" />
       <div class="counter-text">
-        <div class="counter-money num">
-          <Num value={g.run.money} />
+        <div class="counter-money num" aria-label={COPY.essence}>
+          {formatNumber(Math.floor(g.run.essence))}
         </div>
         <div class="counter-income num">
-          +<Money value={g.income()} />
+          +{formatNumber(Math.round(g.income() * 10) / 10)}
           {COPY.perSecond}
         </div>
       </div>
@@ -42,13 +69,12 @@ export function Counter() {
 
 /** A landmark from each era, used for the "back to the whole map" button. */
 const ERA_MODEL: Record<EraId, { model: string; crop?: number }> = {
-  1: { model: 'campfire' },
+  1: { model: 'teepee' },
   2: { model: 'temple' },
-  3: { model: 'lighthouse', crop: 0.7 },
+  3: { model: 'loft', crop: 0.7 },
   4: { model: 'office-tower', crop: 0.55 },
 };
 
-/** Shown once the player has panned or zoomed away: one tap frames the whole map again. */
 export function MapButton() {
   frame.value;
   if (!app.cameraMoved()) return null;
@@ -74,58 +100,6 @@ export function DisasterBanner() {
       <b>{d.phase === 'warning' ? COPY.disaster.warning(def.name, s) : COPY.disaster.active(def.name, s)}</b>
       <span>{COPY.disaster.boost(CLASSES[def.boost.cls].name, def.boost.x)}</span>
     </div>
-  );
-}
-
-/**
- * A big tap target over the raid party, positioned every frame without re-rendering.
- * When the party is off screen it sticks to the nearest edge and points the way.
- */
-export function RaidMarker() {
-  frame.value;
-  const ref = useRef<HTMLButtonElement>(null);
-  const raid = app.game.run.raid;
-  useEffect(() => {
-    if (!raid) return;
-    let id = 0;
-    const tick = () => {
-      const el = ref.current;
-      const p = app.raidScreen();
-      if (el) {
-        if (!p) {
-          el.style.opacity = '0';
-        } else {
-          const ins = viewInsets.value;
-          const pad = 44;
-          const x = Math.min(window.innerWidth - ins.right - pad, Math.max(ins.left + pad, p.x));
-          const y = Math.min(window.innerHeight - ins.bottom - pad, Math.max(ins.top + pad, p.y));
-          el.style.opacity = '1';
-          el.style.transform = `translate(${x}px, ${y}px)`;
-          el.dataset.edge = p.onScreen ? '' : 'true';
-          const arrow = el.querySelector<HTMLElement>('.raid-arrow');
-          if (arrow) arrow.style.transform = `rotate(${Math.atan2(p.y - y, p.x - x)}rad)`;
-        }
-      }
-      id = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(id);
-  }, [raid?.target]);
-  if (!raid) return null;
-  const lair = LAIRS[raid.target].name;
-  const left = Math.ceil(raid.left);
-  return (
-    <button type="button" class="raid-marker" ref={ref} style={{ opacity: 0 }} aria-label={`${COPY.raid.marker(lair)} · ${COPY.raid.hint}`} onClick={() => app.repel()}>
-      <span class="raid-arrow" aria-hidden="true" />
-      <span class="raid-face">
-        <Thumb model={CREATURE_BY_ID[raid.target].model} fill={0.8} />
-        <b class="num">{left}</b>
-      </span>
-      <span class="raid-label">
-        {COPY.raid.marker(lair)}
-        <small>{COPY.raid.hint}</small>
-      </span>
-    </button>
   );
 }
 
@@ -162,12 +136,7 @@ export function Menu() {
           <button type="button" role="menuitem" onClick={() => go('leaderboard')}>
             {COPY.leaderboard.title}
           </button>
-          <button
-            type="button"
-            role="menuitemcheckbox"
-            aria-checked={!muted}
-            onClick={() => app.updateSettings({ muted: !muted })}
-          >
+          <button type="button" role="menuitemcheckbox" aria-checked={!muted} onClick={() => app.updateSettings({ muted: !muted })}>
             {COPY.settings.sound}
             <span class="switch" data-on={!muted || undefined} aria-hidden="true" />
           </button>
@@ -180,61 +149,69 @@ export function Menu() {
   );
 }
 
-/** The tug of war: your bill against the humans' research, plus the species they are taming. */
+// ── The tug of war ──────────────────────────────────────────────
+
+/**
+ * Who holds the ground, nature from the left and the humans from the right with neutral ground
+ * between; the win line at 65%. Below it, the humans' research: four stages, one per era.
+ */
 export function RunBar() {
   frame.value;
   const g = app.game;
   const run = g.run;
-  const bill = g.billProgress();
-  const research = run.research;
-  const level = research < 0.4 ? 'calm' : research < 0.75 ? 'alert' : 'danger';
+  const s = g.shares();
+  const win = BALANCE.territory.winShare;
+  const stage = Math.min(3, Math.floor(run.research));
+  const within = run.research >= 4 ? 1 : run.research - stage;
+  const level = within < 0.4 ? 'calm' : within < 0.75 ? 'alert' : 'danger';
+  const rush = s.nature >= win && run.era < 4;
   const taming = TAMEABLE.filter((id) => (run.taming[id] ?? 0) > 0.01 && run.defected[id] === undefined);
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
   return (
     <div class="runbar">
       <div class="bars">
-        <div class="bar" data-kind="bill" role="meter" aria-label={COPY.run.bill} aria-valuenow={Math.floor(bill * 100)}>
-          <span class="bar-cap coin" aria-hidden="true" />
-          <span class="bar-track">
-            <i style={{ transform: `scaleX(${Math.max(0.01, bill)})` }} />
-          </span>
-          <span class="bar-val num">{Math.floor(bill * 100)}%</span>
-        </div>
         <div
           class="bar"
-          data-kind="research"
-          data-level={level}
+          data-kind="territory"
           role="meter"
-          aria-label={COPY.run.research}
-          aria-valuenow={Math.floor(research * 100)}
+          aria-label={`${COPY.run.territory}：${COPY.run.nature} ${pct(s.nature)}，${COPY.run.human} ${pct(s.human)}`}
+          aria-valuenow={Math.round(s.nature * 100)}
         >
+          <span class="bar-cap leaf" aria-hidden="true" />
+          <span class="bar-track tug">
+            <i class="tug-nature" style={{ width: pct(s.nature) }} />
+            <i class="tug-human" style={{ width: pct(s.human) }} />
+            <b class="tug-goal" style={{ left: pct(win) }} title={run.era === 4 ? COPY.run.goalNow : COPY.run.goal} />
+          </span>
+          <span class="bar-val num">{pct(s.nature)}</span>
+        </div>
+        <div class="bar" data-kind="research" data-level={level} role="meter" aria-label={COPY.run.research} aria-valuenow={Math.floor(run.research * 25)}>
           <span class="bar-cap">
-            <Thumb {...SCIENTIST} />
+            <Thumb model="scientist" crop={0.42} />
           </span>
           <span class="bar-track">
-            <i style={{ transform: `scaleX(${Math.max(0.01, research)})` }} />
-            {BALANCE.research.thresholds.map((t, i) => {
-              const cm = run.countermeasures[i];
-              return (
-                <b
-                  key={t}
-                  data-cls={cm?.cls}
-                  title={cm ? `${countermeasureName(cm.cls, cm.era)} · ${CLASSES[cm.cls].name}` : undefined}
-                  style={{ left: `${t * 100}%` }}
-                />
-              );
-            })}
+            <i style={{ transform: `scaleX(${Math.max(0.01, run.research / 4)})` }} />
+            {[1, 2, 3].map((e) => (
+              <s key={e} class="era-mark" style={{ left: `${e * 25}%` }} />
+            ))}
+            {run.countermeasures.map((cm, i) => (
+              <b key={i} data-cls={cm.cls} title={`${countermeasureName(cm.cls, cm.era)} · ${CLASSES[cm.cls].name}`} style={{ left: `${(i + 0.5) * 25}%` }} />
+            ))}
           </span>
-          <span class="bar-val num">{Math.floor(research * 100)}%</span>
+          <span class="bar-val num" data-era={run.era}>
+            {eraName(run.era)}
+          </span>
         </div>
+        <div class="bar-note">{rush ? COPY.run.rush : run.era === 4 ? COPY.run.goalNow : COPY.run.goal}</div>
       </div>
       {taming.length > 0 && (
         <div class="tames">
           {taming.map((id) => {
             const v = run.taming[id] ?? 0;
-            const label = `${CREATURE_BY_ID[id].name} ${COPY.run.taming} ${Math.floor(v * 100)}%`;
+            const label = `${UNITS[id].name} ${COPY.run.taming} ${Math.floor(v * 100)}%`;
             return (
               <span key={id} class="tame" data-hot={v > 0.7 || undefined} style={{ '--p': v }} title={label} aria-label={label}>
-                <Thumb model={CREATURE_BY_ID[id].model} fill={0.82} />
+                <Thumb model={id} fill={0.82} />
               </span>
             );
           })}
@@ -244,41 +221,40 @@ export function RunBar() {
   );
 }
 
-// ── Skills ──────────────────────────────────────────────────────
+// ── Skills and the rally flag ───────────────────────────────────
 
 const ACTIVE_LOOK: Record<Exclude<ActiveId, 'surge'>, { model: string; crop?: number }> = {
   rescue: { model: 'wolf' },
   rampage: { model: 'mammoth' },
-  sabotage: SCIENTIST,
+  sabotage: { model: 'scientist', crop: 0.42 },
 };
 
 interface SkillProps {
   kind: string;
   label: string;
   look: { model: string; crop?: number };
-  /** Seconds until ready, and the full cooldown, for the sweep. */
   cd?: number;
   cdTotal?: number;
-  /** Seconds left on an effect that is running right now. */
   live?: number;
   disabled?: boolean;
+  pressed?: boolean;
   badge?: ComponentChildren;
-  tag?: ComponentChildren;
   face?: ComponentChildren;
   onClick: () => void;
 }
 
-function Skill({ kind, label, look, cd = 0, cdTotal = 1, live = 0, disabled, badge, tag, face, onClick }: SkillProps) {
+function Skill({ kind, label, look, cd = 0, cdTotal = 1, live = 0, disabled, pressed, badge, face, onClick }: SkillProps) {
   const cooling = cd > 0 && live <= 0;
   return (
     <button
       type="button"
       class="skill"
       data-skill={kind}
-      data-live={live > 0 || undefined}
+      data-live={live > 0 || pressed || undefined}
       data-ready={(!disabled && !cooling && live <= 0) || undefined}
       disabled={disabled || cooling || live > 0}
       aria-label={label}
+      aria-pressed={pressed}
       title={label}
       onClick={onClick}
     >
@@ -297,22 +273,27 @@ function Skill({ kind, label, look, cd = 0, cdTotal = 1, live = 0, disabled, bad
         </span>
       )}
       {badge !== undefined && <span class="skill-badge num">{badge}</span>}
-      {tag !== undefined && <span class="skill-tag num">{tag}</span>}
     </button>
   );
 }
 
-/** Era mechanics and active skills: round buttons, one row, never stacked on each other. */
+/** Active skills, the tide and the rally flag: round buttons in one row. */
 export function SkillDock() {
   frame.value;
   const g = app.game;
   if (!g.running) return null;
   const actives = (['rescue', 'rampage', 'sabotage'] as const).filter((id) => g.mods.actives[id]);
-  if (!g.mods.breeding && !g.mods.tide && !actives.length) return null;
   const fire = (id: ActiveId) => (g.activate(id) ? app.sfx.surge() : app.sfx.deny());
+  const flag = !!g.run.rally;
   return (
     <div class="skills">
-      {g.mods.breeding && <Nest />}
+      <Skill
+        kind="rally"
+        label={rallying.value ? COPY.rally.hint : flag ? COPY.rally.clear : COPY.rally.set}
+        look={{ model: 'flag' }}
+        pressed={rallying.value || flag}
+        onClick={() => (flag && !rallying.value ? app.clearRally() : app.toggleRally())}
+      />
       {g.mods.tide && <Surge />}
       {actives.map((id) => (
         <Skill
@@ -330,32 +311,11 @@ export function SkillDock() {
   );
 }
 
-function Nest() {
-  frame.value;
-  const g = app.game;
-  const run = g.run;
-  const cost = g.nestCost();
-  let bred = 0;
-  for (const c of CREATURES) if (c.cls === 'swarm') bred += bredPerSec(run, g.mods, c.id);
-  return (
-    <Skill
-      kind="nest"
-      label={`${COPY.breeding.name} ×${run.nests} · ${COPY.breeding.bred} +${formatNumber(bred)}${COPY.perSecond}`}
-      look={{ model: 'rat' }}
-      disabled={cost.gt(run.money)}
-      badge={`×${run.nests}`}
-      tag={<Money value={cost} />}
-      onClick={() => (g.buyNest() ? app.sfx.buy() : app.sfx.deny())}
-    />
-  );
-}
-
 function Surge() {
   frame.value;
   const g = app.game;
   const t = g.run.tide;
-  const surging = t.surgeLeft > 0;
-  const level = surging ? 1 : tideLevel(t.clock);
+  const level = t.surgeLeft > 0 ? 1 : tideLevel(t.clock);
   return (
     <Skill
       kind="surge"
@@ -364,6 +324,7 @@ function Surge() {
       cd={g.cooldown('surge')}
       cdTotal={g.mods.surgeCooldown}
       live={t.surgeLeft}
+      disabled={!g.mods.actives.surge}
       badge={`×${tideMult(t, g.mods).toFixed(1)}`}
       face={<i class="water" style={{ transform: `scaleY(${0.12 + level * 0.88})` }} />}
       onClick={() => (g.activate('surge') ? app.sfx.surge() : app.sfx.deny())}
@@ -371,9 +332,59 @@ function Surge() {
   );
 }
 
+// ── Placing a building ──────────────────────────────────────────
+
+export function PlacementBar() {
+  frame.value;
+  const kind = placing.value;
+  if (!kind && !rallying.value) return null;
+  if (rallying.value) {
+    return (
+      <div class="placebar" role="status">
+        <b>{COPY.rally.hint}</b>
+        <div class="placebar-actions">
+          <button type="button" class="chunk" data-tone="plain" onClick={() => app.toggleRally()}>
+            {COPY.build.cancel}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  const def = BUILDINGS[kind!];
+  const enemy = app.game.mods.enemyGround[kind as never];
+  return (
+    <div class="placebar" role="status">
+      <b>
+        {COPY.build.placing(def.name)} · <Essence value={app.game.buildingCost(kind!)} />
+      </b>
+      <span class="placebar-key">
+        <i data-tone="own" />
+        {COPY.build.hintOwn}
+      </span>
+      <span class="placebar-key">
+        <i data-tone="wild" />
+        {COPY.build.hintWild}
+      </span>
+      {enemy && (
+        <span class="placebar-key">
+          <i data-tone="enemy" />
+          {COPY.build.hintEnemy}
+        </span>
+      )}
+      <div class="placebar-actions">
+        <button type="button" class="chunk" onClick={() => app.autoPlace()}>
+          {COPY.build.auto}
+        </button>
+        <button type="button" class="chunk" data-tone="plain" onClick={() => app.cancelPlacing()}>
+          {COPY.build.cancel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Ambient ─────────────────────────────────────────────────────
 
-/** The middle of the part of the screen the city gets. */
 function sceneCenter(): { x: number; y: number } {
   const ins = viewInsets.value;
   const w = window.innerWidth;
@@ -381,7 +392,7 @@ function sceneCenter(): { x: number; y: number } {
   return { x: ins.left + (w - ins.left - ins.right) / 2, y: ins.top + Math.max(1, h - ins.top - ins.bottom) / 2 };
 }
 
-/** Now and then a headline pops up over the city, then goes away. */
+/** Now and then a headline pops up over the map, then goes away. */
 export function NewsBubble() {
   const [line, setLine] = useState<{ id: number; text: string } | null>(null);
   useEffect(() => {
@@ -392,33 +403,19 @@ export function NewsBubble() {
       const seen = ([1, 2, 3, 4] as EraId[]).filter((e) => e <= era).flatMap((e) => NEWS[e]);
       const pool = n % 3 === 0 ? seen : NEWS[era];
       n++;
-      if (modal.value === null && app.game.running) setLine({ id: n, text: pool[n % pool.length]! });
+      if (modal.value === null && app.game.running && !placing.value) setLine({ id: n, text: pool[n % pool.length]! });
       timer = setTimeout(() => {
         setLine(null);
-        timer = setTimeout(show, 24000 + Math.random() * 20000);
+        timer = setTimeout(show, 26000 + Math.random() * 20000);
       }, 6500);
     };
-    timer = setTimeout(show, 14000);
+    timer = setTimeout(show, 20000);
     return () => clearTimeout(timer);
   }, []);
   if (!line) return null;
   return (
     <div class="bubble" key={line.id} aria-live="polite" style={{ left: `${sceneCenter().x}px` }}>
       {line.text}
-    </div>
-  );
-}
-
-/** A pulsing ring over the city until the first tap. Shows what to do without saying it. */
-export function TapHint() {
-  frame.value;
-  const run = app.game.run;
-  if (run.clicks > 0 || run.creatures.ant.bought > 0 || run.money.gt(15) || app.game.meta.runs > 0) return null;
-  const c = sceneCenter();
-  return (
-    <div class="tap-hint" aria-hidden="true" style={{ left: `${c.x}px`, top: `${c.y}px` }}>
-      <span />
-      <span />
     </div>
   );
 }

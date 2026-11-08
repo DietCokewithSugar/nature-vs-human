@@ -2,32 +2,32 @@ import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import {
   BALANCE,
+  BUILDINGS,
   CLASSES,
-  CREATURE_BY_ID,
-  D,
   DIFFICULTIES,
   DIFFICULTY_GATE,
   DIFFICULTY_NAMES,
-  DOMESTICS,
-  LAIRS,
   ROUTES,
-  ZONES,
-  creatureProd,
+  UNITS,
+  birthInterval,
   difficultyUnlocked,
   formatDuration,
   formatNumber,
+  maxAlive,
   metaMods,
-  milestonesReached,
-  nextMilestone,
+  spawnPool,
+  type BuildingDef,
   type Difficulty,
   type RouteId,
+  type UnitId,
 } from '../core/index.ts';
 import credits from '../data/credits.json';
 import { NICKNAME_MAX, type BoardKind, type BoardResult } from '../data/leaderboard.ts';
-import { CloseButton, Money, Num, Segmented, Thumb } from './common.tsx';
+import { LOOKS } from '../scene/creatures.ts';
+import { CloseButton, Essence, Meter, Segmented, Thumb } from './common.tsx';
 import { COPY } from './copy.ts';
-import { describeEffects } from './describe.ts';
-import { app, detail, flash, floats, frame, modal, pushToast, sheet, tab, toasts, viewInsets } from './store.ts';
+import { describeAura, describeEffects, describeMatchups, shortSeconds } from './describe.ts';
+import { app, detail, detailKind, flash, floats, frame, modal, pushToast, sheet, tab, toasts, viewInsets } from './store.ts';
 
 export function Toasts() {
   const ins = viewInsets.value;
@@ -35,7 +35,7 @@ export function Toasts() {
   return (
     <div class="toasts" role="status" aria-live="polite" style={{ left: `${x}px` }}>
       {toasts.value.map((t) => (
-        <div key={t.id} class="toast" data-era={t.era}>
+        <div key={t.id} class="toast" data-era={t.era} data-tone={t.tone}>
           <div class="toast-title">{t.title}</div>
           {t.body && <div class="toast-body">{t.body}</div>}
         </div>
@@ -48,7 +48,7 @@ export function Floats() {
   return (
     <div class="floats" aria-hidden="true">
       {floats.value.map((f) => (
-        <span key={f.id} class="float" style={{ left: `${f.x}px`, top: `${f.y}px` }}>
+        <span key={f.id} class="float" data-tone={f.tone} style={{ left: `${f.x}px`, top: `${f.y}px` }}>
           {f.text}
         </span>
       ))}
@@ -106,8 +106,12 @@ export function Modals() {
       return <SetupModal />;
     case 'result':
       return <ResultModal />;
-    case 'creature':
-      return <CreatureModal />;
+    case 'building':
+      return <BuildingModal />;
+    case 'unit':
+      return <UnitModal />;
+    case 'kind':
+      return <KindModal />;
     default:
       return null;
   }
@@ -174,72 +178,252 @@ function SetupModal() {
   );
 }
 
-// ── Creature card ───────────────────────────────────────────────
+// ── Cards ───────────────────────────────────────────────────────
 
-/** Everything the shop tile leaves out: the job title, the class, the output. */
-function CreatureModal() {
-  frame.value;
-  const id = detail.value;
-  if (!id) return null;
-  const def = CREATURE_BY_ID[id];
+/** The model key for a unit's thumbnail. */
+export function unitModel(id: UnitId): { model: string; crop?: number } {
+  const look = LOOKS[id];
+  return look.human ? { model: look.model, crop: 0.5 } : { model: look.model };
+}
+
+const hourText = (h: number) => {
+  const hh = Math.floor(((h % 24) + 24) % 24);
+  return `${String(hh).padStart(2, '0')}:${String(Math.floor((h - Math.floor(h)) * 6) * 10).padStart(2, '0')}`;
+};
+
+/** One unit kind in a few numbers: HP, attack, lifespan and its daily habits. */
+function UnitRow({ id }: { id: UnitId }) {
+  const def = UNITS[id];
   const g = app.game;
-  const run = g.run;
-  const c = run.creatures[id];
-  const defected = run.defected[id];
-  const taming = run.taming[id] ?? 0;
-  const next = nextMilestone(c.bought);
-  const reached = milestonesReached(c.bought);
   return (
-    <Modal title={def.name} kind="creature">
-      <div class="profile" data-cls={def.cls}>
-        <Thumb model={def.model} class="profile-pic" />
-        <div class="profile-text">
-          <div class="profile-title">{def.title}</div>
-          <span class="cls-pill">{CLASSES[def.cls].name}</span>
+    <div class="unit-row" data-side={def.side}>
+      <Thumb {...unitModel(id)} class="unit-pic" />
+      <div class="unit-text">
+        <div class="unit-name">
+          {def.name}
+          <small>{def.title}</small>
         </div>
-      </div>
-      <dl class="card stats">
-        <div>
-          <dt>{COPY.creatures.owned}</dt>
-          <dd class="num">
-            <Num value={defected ?? c.bought + c.bred} />
-          </dd>
+        <div class="unit-stats num">
+          <span>
+            {COPY.unit.hp} {Math.round(g.unitMaxHp(id))}
+          </span>
+          {def.atk > 0 && (
+            <span>
+              {COPY.unit.atk} {formatNumber(Math.round((def.atk / def.rate) * 10) / 10)}
+              {COPY.perSecond}
+            </span>
+          )}
+          <span>
+            {COPY.unit.life} {COPY.unit.days(def.life)}
+          </span>
+          <span>{COPY.unit.roles[def.role]}</span>
         </div>
-        <div>
-          <dt>{COPY.creatures.output}</dt>
-          <dd>{defected === undefined ? <Money value={creatureProd(run, g.mods, id)} /> : '—'}</dd>
-        </div>
-        <div>
-          {taming > 0.01 && defected === undefined ? (
-            <>
-              <dt>{COPY.run.taming}</dt>
-              <dd class="num danger">{Math.floor(taming * 100)}%</dd>
-            </>
+        <div class="unit-habits">
+          {def.role === 'collect' ? (
+            <span>{COPY.unit.collect(hourText(def.forage.at), def.forage.hours)}</span>
           ) : (
             <>
-              <dt>{COPY.creatures.milestone}</dt>
-              <dd class="num">{next ? `${c.bought}/${next}` : `×${formatNumber(BALANCE.milestoneMult ** reached)}`}</dd>
+              <span>
+                {COPY.unit.forage} {COPY.unit.around(hourText(def.forage.at), def.forage.hours)}
+              </span>
+              <span>
+                {COPY.unit.rest} {COPY.unit.around(hourText(def.rest.at), def.rest.hours)}
+              </span>
             </>
           )}
+          {def.diet && <span class="diet">{COPY.unit.diet[def.diet]}</span>}
         </div>
-      </dl>
-      {defected !== undefined && <p class="ending-body">{COPY.creatures.defected(DOMESTICS[def.tame!].name)}</p>}
-      <div class="lair-line" data-wrecked={(run.lairs[id] ?? 0) > 0 || undefined}>
-        <span>
-          {COPY.lairs.home}：{COPY.lairs.where(LAIRS[id].name, ZONES[LAIRS[id].zone].name)}
-          {(run.lairs[id] ?? 0) > 0 && <b> · {COPY.lairs.wrecked(formatDuration(run.lairs[id]!))}</b>}
-        </span>
+        {describeMatchups(def).length > 0 && (
+          <div class="unit-vs">
+            {describeMatchups(def).map((t) => (
+              <span key={t}>{t}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AuraList({ def }: { def: BuildingDef }) {
+  const lines = describeAura(def);
+  if (!lines.length) return null;
+  return (
+    <div class="card aura-list" data-side={def.side}>
+      <div class="section-label">{COPY.aura.effect}</div>
+      <ul>
+        {lines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function SpawnList({ def }: { def: BuildingDef }) {
+  const g = app.game;
+  const pool = spawnPool(g.run, def);
+  const total = pool.reduce((a, p) => a + p.w, 0);
+  const shown = def.spawns.filter((s) => !s.if || pool.some((p) => p.unit === s.unit));
+  if (!shown.length) return null;
+  return (
+    <div class="card spawns">
+      <div class="section-label">{COPY.build.makes}</div>
+      {shown.map((s) => (
+        <div key={s.unit} class="spawn">
+          <UnitRow id={s.unit} />
+          {shown.length > 1 && total > 0 && <span class="spawn-share num">{Math.round(((pool.find((p) => p.unit === s.unit)?.w ?? 0) / total) * 100)}%</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A building on the map: health, construction, level, what it makes; nature's can be upgraded. */
+function BuildingModal() {
+  frame.value;
+  const g = app.game;
+  const id = detail.value;
+  const b = id !== null ? g.building(id) : undefined;
+  useEffect(() => {
+    app.select(id);
+    return () => app.select(null);
+  }, [id]);
+  if (!b) return null;
+  const def = BUILDINGS[b.kind];
+  const max = g.buildingMaxHp(b);
+  const cost = g.upgradeCost(b.id);
+  const mine = b.side === 'nature';
+  const interval = def.interval > 0 ? birthInterval(g.mods, b) : 0;
+  return (
+    <Modal title={def.name} kind="building">
+      <div class="profile" data-side={b.side}>
+        <Thumb model={def.model} class="profile-pic" />
+        <div class="profile-text">
+          <div class="profile-title">{mine ? def.desc : COPY.card.human}</div>
+          <span class="cls-pill">
+            {COPY.card.level(b.level)} · {COPY.card.material[def.material]}
+          </span>
+          <span class="pips big" aria-label={COPY.card.level(b.level)}>
+            {[1, 2, 3, 4].map((l) => (
+              <i key={l} data-on={l <= b.level || undefined} />
+            ))}
+          </span>
+        </div>
+      </div>
+      <div class="card meters">
+        <Meter label={COPY.card.hp} kind="hp" value={b.hp / max} text={`${Math.ceil(b.hp)}/${Math.round(max)}`} />
+        {b.build < 1 && <Meter label={COPY.card.building} kind="build" value={b.build} />}
+        <p class="fine">{COPY.card.noRepair}</p>
+      </div>
+      {def.interval > 0 && (
+        <dl class="card stats">
+          <div>
+            <dt>{COPY.card.alive}</dt>
+            <dd class="num">
+              {g.alive(b.id)}/{maxAlive(b)}
+            </dd>
+          </div>
+          <div>
+            <dt>{COPY.card.next}</dt>
+            <dd class="num">{b.build < 1 ? '—' : g.alive(b.id) >= maxAlive(b) ? COPY.card.full : formatDuration(Math.max(0, b.timer))}</dd>
+          </div>
+          <div>
+            <dt>{COPY.card.interval}</dt>
+            <dd class="num">{shortSeconds(interval)}</dd>
+          </div>
+        </dl>
+      )}
+      {def.income && <p class="ending-body">{COPY.card.income(String(def.income))}</p>}
+      <AuraList def={def} />
+      <SpawnList def={def} />
+      <div class="btn-row wide">
         <button
           type="button"
-          class="chunk"
+          class="btn wide"
           onClick={() => {
             modal.value = null;
-            app.lookAtLair(id);
+            app.lookAt(b.x, b.z);
           }}
         >
-          {COPY.lairs.show}
+          {COPY.card.look}
         </button>
+        {mine && (
+          <button
+            type="button"
+            class="btn solid wide"
+            disabled={cost === null || cost > g.run.essence || b.build < 1 || !g.running}
+            title={COPY.card.upgradeGives}
+            onClick={() => (g.upgrade(b.id) ? app.sfx.upgrade() : app.sfx.deny())}
+          >
+            {cost === null ? (
+              COPY.card.maxed
+            ) : (
+              <>
+                {COPY.card.upgrade} · <Essence value={cost} />
+              </>
+            )}
+          </button>
+        )}
       </div>
+    </Modal>
+  );
+}
+
+/** A unit on the map: its bars, what it is doing, its habits. */
+function UnitModal() {
+  frame.value;
+  const g = app.game;
+  const id = detail.value;
+  const u = id !== null ? g.world.units.get(id) : undefined;
+  if (!u) return null;
+  const def = UNITS[u.kind];
+  const max = g.unitMaxHp(u.kind);
+  const days = (s: number) => Math.max(0, s / BALANCE.day);
+  return (
+    <Modal title={def.name} kind="unit">
+      <div class="card meters">
+        <Meter label={COPY.unit.hp} kind="hp" value={u.hp / max} text={`${Math.ceil(u.hp)}/${Math.round(max)}`} />
+        <Meter label={COPY.unit.life} kind="life" value={1 - u.age / u.life} text={COPY.unit.days(Math.round(days(u.life - u.age) * 10) / 10)} />
+        <p class="fine">
+          {COPY.unit.side[u.side]} · {u.feeding ? COPY.unit.feeding : COPY.unit.task[u.task]}
+          {def.cls ? ` · ${CLASSES[def.cls].name}` : ''}
+        </p>
+      </div>
+      <div class="card spawns">
+        <UnitRow id={u.kind} />
+        <p class="fine">
+          {COPY.unit.forage} {hourText(u.forageAt)} · {COPY.unit.rest} {hourText(u.restAt)}
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+/** A building kind from the shop: what it needs and what it makes. */
+function KindModal() {
+  frame.value;
+  const kind = detailKind.value;
+  if (!kind) return null;
+  const def = BUILDINGS[kind];
+  return (
+    <Modal title={def.name} kind="building">
+      <div class="profile" data-side={def.side}>
+        <Thumb model={def.model} class="profile-pic" />
+        <div class="profile-text">
+          <div class="profile-title">{def.desc}</div>
+          <span class="cls-pill">
+            {def.near ? COPY.build.need[def.near] : COPY.card.material[def.material]} · {COPY.card.hp} {def.hp}
+          </span>
+        </div>
+      </div>
+      {def.interval > 0 && (
+        <p class="ending-body">
+          {COPY.build.every(shortSeconds(def.interval))} · {COPY.build.keeps(def.alive)} · {COPY.card.upgradeGives}
+        </p>
+      )}
+      <AuraList def={def} />
+      <SpawnList def={def} />
     </Modal>
   );
 }
@@ -260,10 +444,8 @@ function ResultModal() {
           <dd class="num">{formatDuration(res.time)}</dd>
         </div>
         <div>
-          <dt>{COPY.result.earned}</dt>
-          <dd>
-            <Money value={D(10).pow(res.earnedLog10)} />
-          </dd>
+          <dt>{COPY.result.territory}</dt>
+          <dd class="num">{Math.round(res.best * 100)}%</dd>
         </div>
         <div>
           <dt>{COPY.result.points}</dt>
@@ -294,7 +476,7 @@ function ResultModal() {
 
 function LeaderboardModal() {
   const lb = app.leaderboard;
-  const [kind, setKind] = useState<BoardKind>('lifetime');
+  const [kind, setKind] = useState<BoardKind>('territory');
   const [difficulty, setDifficulty] = useState<Difficulty>('normal');
   const [data, setData] = useState<BoardResult | null>(null);
   const [loading, setLoading] = useState(lb.online);
@@ -316,7 +498,7 @@ function LeaderboardModal() {
     };
   }, [kind, difficulty]);
 
-  const show = (v: number) => (kind === 'fastest' ? <span class="num">{formatDuration(v)}</span> : <Money value={D(10).pow(v)} />);
+  const show = (v: number) => <span class="num">{kind === 'fastest' ? formatDuration(v) : `${Math.round(v * 10) / 10}%`}</span>;
 
   const saveName = async () => {
     if (await lb.setNickname(name, app.game.state)) {
@@ -335,8 +517,7 @@ function LeaderboardModal() {
         label="榜单"
         value={kind}
         options={[
-          { value: 'lifetime', label: COPY.leaderboard.lifetime },
-          { value: 'best', label: COPY.leaderboard.best },
+          { value: 'territory', label: COPY.leaderboard.territory },
           { value: 'fastest', label: COPY.leaderboard.fastest },
         ]}
         onChange={setKind}

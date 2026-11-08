@@ -13,14 +13,13 @@ import {
   type Object3D,
   type Scene,
 } from 'three';
-import { DISASTERS, type CreatureId, type DisasterId, type EraId } from '../core/index.ts';
-import type { SceneView } from './city.ts';
+import { DISASTERS, VOLCANOES, ZONES, type DisasterId, type DisasterState, type EraId } from '../core/index.ts';
 import type { Effects } from './effects.ts';
 import { DISASTER_COLORS, PALETTE } from './palette.ts';
 import type { Terrain } from './terrain.ts';
-import { BAY, LAIR_SPOTS, VOLCANO, ZONE_AREAS } from './world.ts';
+const VOLCANO = VOLCANOES[0]!;
 
-type DisasterView = NonNullable<SceneView['disaster']>;
+type DisasterView = DisasterState;
 
 const LAVA = [DISASTER_COLORS.lava, DISASTER_COLORS.lavaGlow, PALETTE.debris[3]!] as const;
 
@@ -36,7 +35,6 @@ export class DisasterFx {
   private phase: 'warning' | 'active' | null = null;
   private t = 0;
   private era: EraId = 1;
-  private hitLair: (id: CreatureId) => void = () => {};
   private shakeArea: (x: number, z: number, r: number) => void = () => {};
 
   private outline: Mesh;
@@ -109,9 +107,8 @@ export class DisasterFx {
     return this.shakeAmount;
   }
 
-  sync(d: DisasterView | null, era: EraId, hitLair: (id: CreatureId) => void, shakeArea: (x: number, z: number, r: number) => void): void {
+  sync(d: DisasterView | null, era: EraId, shakeArea: (x: number, z: number, r: number) => void): void {
     this.era = era;
-    this.hitLair = hitLair;
     this.shakeArea = shakeArea;
     if (!d) {
       if (this.current) this.stop();
@@ -136,7 +133,7 @@ export class DisasterFx {
   }
 
   private warn(id: DisasterId): void {
-    const zone = ZONE_AREAS[DISASTERS[id].zone];
+    const zone = ZONES[DISASTERS[id].zone];
     this.outline.position.set(zone.x, Math.max(0, this.terrain.heightAt(zone.x, zone.z)) + 0.6, zone.z);
     this.outline.scale.setScalar(zone.r);
     this.outline.visible = true;
@@ -146,24 +143,22 @@ export class DisasterFx {
 
   private strike(d: DisasterView): void {
     this.outline.visible = false;
-    for (const id of d.wrecked) this.hitLair(id);
     if (d.id === 'tsunami') {
       this.wave.visible = true;
       // Broadside to its heading (north-east, from the open sea to the coast); the crest leads.
       this.wave.rotation.y = -Math.PI / 4;
     }
     if (d.id === 'tornado') {
-      // Through every lair it wrecked, then off the map.
-      const z = ZONE_AREAS.plains;
-      const pts = d.wrecked.map((id) => new Vector3(LAIR_SPOTS[id].x, 0, LAIR_SPOTS[id].z));
-      pts.sort((a, b) => a.x - b.x);
+      // A wandering path across the plains.
+      const z = ZONES.plains;
+      const pts = [0.3, 0.55, 0.8].map((f, i) => new Vector3(z.x - z.r + f * z.r * 2, 0, z.z + (i % 2 ? -1 : 1) * z.r * 0.35 * Math.random()));
       this.funnelPath = [new Vector3(z.x - z.r, 0, z.z + 6), ...pts, new Vector3(z.x + z.r, 0, z.z - 4)];
       this.funnel.visible = true;
     }
     if (d.id === 'volcano') {
-      const top = new Vector3(VOLCANO.x, 10, VOLCANO.z);
+      const top = new Vector3(VOLCANO.x, 7.5, VOLCANO.z);
       this.effects.burst(top, 40, 2.2, LAVA);
-      this.shakeArea(VOLCANO.x, VOLCANO.z, ZONE_AREAS.volcano.r + 8);
+      this.shakeArea(VOLCANO.x, VOLCANO.z, ZONES.volcano.r + 8);
     }
   }
 
@@ -187,12 +182,12 @@ export class DisasterFx {
       this.outlineMat.opacity = 0.35 + Math.sin(this.clock * 6) * 0.3;
       if (d.id === 'tsunami') this.sea = MathUtils.damp(this.sea === -Infinity ? -1.2 : this.sea, -2.6, 0.8, dt);
       if (d.id === 'tornado' && Math.random() < dt * 6) {
-        const z = ZONE_AREAS.plains;
+        const z = ZONES.plains;
         this.effects.puff(new Vector3(z.x + (Math.random() - 0.5) * z.r * 1.4, 18 + Math.random() * 4, z.z + (Math.random() - 0.5) * z.r), 6, PALETTE.smoke, 0.3, 3);
       }
       if (d.id === 'volcano') {
         this.shakeAmount = Math.max(this.shakeAmount, 0.25);
-        if (Math.random() < dt * 5) this.effects.puff(new Vector3(VOLCANO.x, 11, VOLCANO.z), 3, DISASTER_COLORS.ash, 3, 2.5);
+        if (Math.random() < dt * 5) this.effects.puff(new Vector3(VOLCANO.x, 8, VOLCANO.z), 3, DISASTER_COLORS.ash, 3, 2.5);
       }
       return;
     }
@@ -209,8 +204,9 @@ export class DisasterFx {
     this.sea = MathUtils.lerp(MathUtils.lerp(-2.6, -0.12, inK), -1.2, outK);
     this.shakeAmount = Math.max(this.shakeAmount, 0.15 * (1 - outK));
     // The wave rolls in from the open sea towards the coast and the harbour.
-    const from = new Vector3(BAY.x - 12, 0, BAY.z + 4);
-    const to = new Vector3(BAY.x + 16, 0, BAY.z - 22);
+    const bay = ZONES.coast;
+    const from = new Vector3(bay.x - 22, 0, bay.z + 18);
+    const to = new Vector3(bay.x + 6, 0, bay.z - 6);
     const p = from.lerp(to, MathUtils.smoothstep(k, 0, 0.45));
     this.wave.position.set(p.x, Math.max(-1.5, this.sea) - 0.2, p.z);
     this.wave.scale.y = MathUtils.lerp(2.6, 0.1, MathUtils.smoothstep(k, 0.3, 0.5));
@@ -220,7 +216,7 @@ export class DisasterFx {
     }
     // Once ashore, the harbour and coastal outposts take a beating (later eras have more to lose).
     if (k > 0.25 && k < 0.5 && Math.random() < dt * 2) {
-      this.shakeArea(BAY.x + 30 + Math.random() * 25, BAY.z - 4, 14 + this.era * 2);
+      this.shakeArea(bay.x + Math.random() * 20, bay.z - Math.random() * 10, 12 + this.era * 2);
     }
   }
 
@@ -245,16 +241,16 @@ export class DisasterFx {
   }
 
   private updateVolcano(k: number, dt: number): void {
-    const top = new Vector3(VOLCANO.x, 11, VOLCANO.z);
+    const top = new Vector3(VOLCANO.x, 8, VOLCANO.z);
     const fading = 1 - MathUtils.smoothstep(k, 0.6, 1);
     this.shakeAmount = Math.max(this.shakeAmount, 0.45 * fading);
     if (Math.random() < dt * 10 * fading) this.effects.puff(top.clone().add(new Vector3((Math.random() - 0.5) * 3, 1, (Math.random() - 0.5) * 3)), 4.5, DISASTER_COLORS.ash, 4, 3);
     if (Math.random() < dt * 6 * fading) this.effects.burst(top, 5, 1.5, LAVA);
     // Lava bombs land around the foot of the mountain.
     if (Math.random() < dt * 2.5 * fading) {
-      const z = ZONE_AREAS.volcano;
+      const z = ZONES.volcano;
       const a = Math.random() * Math.PI * 2;
-      const r = 8 + Math.random() * z.r;
+      const r = 6 + Math.random() * z.r;
       const x = VOLCANO.x + Math.cos(a) * r;
       const zz = VOLCANO.z + Math.sin(a) * r;
       const at = new Vector3(x, Math.max(0, this.terrain.heightAt(x, zz)) + 0.5, zz);

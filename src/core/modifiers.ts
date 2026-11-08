@@ -1,101 +1,135 @@
 import { BALANCE } from './config/balance.ts';
 import { CLASSES } from './config/classes.ts';
-import { CREATURE_IDS } from './config/creatures.ts';
-import { DOMESTIC_EFFECTS } from './config/humans.ts';
+import { DISASTERS } from './config/disasters.ts';
 import { META_BY_ID, ROUTES } from './config/meta.ts';
 import { SKILL_BY_ID } from './config/skills.ts';
-import { UPGRADE_BY_ID } from './config/upgrades.ts';
-import { disasterBoost } from './mechanics/disasters.ts';
 import type { GameState, MetaState, RunState } from './state.ts';
-import { CLASS_IDS, type ActiveId, type CreatureId, type Effect, type RouteId, type UnitClass } from './types.ts';
+import { CLASS_IDS, type ActiveId, type Effect, type NatureBuildingId, type RouteId, type UnitClass } from './types.ts';
 
-/** Everything skills, upgrades, meta, route and humans change, flattened for the hot paths. */
+/** Everything skills, meta, route, countermeasures and disasters change, flattened for the hot paths. */
 export interface Mods {
-  creatureMult: Record<CreatureId, number>;
-  classMult: Record<UnitClass, number>;
-  globalMult: number;
-  /** 0..0.95 share of each countermeasure a class shrugs off. */
+  classAtk: Record<UnitClass, number>;
+  globalAtk: number;
+  classHp: Record<UnitClass, number>;
+  globalHp: number;
+  classLife: Record<UnitClass, number>;
+  globalLife: number;
+  /** 0 … 0.95 share of each countermeasure a class shrugs off. */
   resist: Record<UnitClass, number>;
-  clickMult: number;
-  clickPct: number;
+  convertMult: number;
+  productionMult: number;
+  regenMult: number;
+  bubbleMult: number;
+  bubbleRate: number;
+  incomeMult: number;
   researchMult: number;
   domesticationMult: number;
-  breeding: boolean;
-  breedMult: number;
   tide: boolean;
   tideAmp: number;
   surgeDuration: number;
   surgeCooldown: number;
   actives: Record<ActiveId, boolean>;
-  startMoney: number;
+  /** Nature buildings opened by skills. */
+  unlocked: Partial<Record<NatureBuildingId, true>>;
+  /** Nature buildings allowed on human ground. */
+  enemyGround: Partial<Record<NatureBuildingId, true>>;
+  capAdd: number;
+  wildBuild: number;
+  /** Points per second nature ground creeps into neutral neighbours. */
+  spread: number;
+  swarmBatch: number;
+  startEssence: number;
   forksUnlocked: Record<string, boolean>;
   routesUnlocked: Record<RouteId, boolean>;
-  /** Hunters move faster once they have dogs. */
-  dogs: boolean;
-  /** Time multiplier for wrecked lairs growing back. */
-  lairRegrowMult: number;
-  /** Multiplier on the output a wrecked lair costs. */
-  lairLossMult: number;
+  /** Attack each class keeps after the humans' countermeasures. */
+  countered: Record<UnitClass, number>;
+  /** The class a raging disaster lifts, if any. */
+  boost: { cls: UnitClass; x: number } | null;
 }
 
 function base(): Mods {
   const one = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, 1])) as Record<K, number>;
   return {
-    creatureMult: one(CREATURE_IDS),
-    classMult: one(CLASS_IDS),
-    globalMult: 1,
+    classAtk: one(CLASS_IDS),
+    globalAtk: 1,
+    classHp: one(CLASS_IDS),
+    globalHp: 1,
+    classLife: one(CLASS_IDS),
+    globalLife: 1,
     resist: Object.fromEntries(CLASS_IDS.map((c) => [c, CLASSES[c].resist])) as Record<UnitClass, number>,
-    clickMult: 1,
-    clickPct: 0,
+    convertMult: 1,
+    productionMult: 1,
+    regenMult: 1,
+    bubbleMult: 1,
+    bubbleRate: 1,
+    incomeMult: 1,
     researchMult: 1,
     domesticationMult: 1,
-    breeding: false,
-    breedMult: 1,
     tide: false,
     tideAmp: BALANCE.tide.baseAmp,
     surgeDuration: BALANCE.tide.surgeDuration,
     surgeCooldown: BALANCE.tide.surgeCooldown,
     actives: { surge: false, rescue: false, rampage: false, sabotage: false },
-    startMoney: 0,
+    unlocked: {},
+    enemyGround: {},
+    capAdd: 0,
+    wildBuild: 1,
+    spread: 0,
+    swarmBatch: 0,
+    startEssence: 0,
     forksUnlocked: {},
     routesUnlocked: { beasts: true, plague: false },
-    dogs: false,
-    lairRegrowMult: 1,
-    lairLossMult: 1,
+    countered: one(CLASS_IDS),
+    boost: null,
   };
 }
 
 function apply(m: Mods, e: Effect): void {
   switch (e.type) {
-    case 'creatureMult':
-      m.creatureMult[e.creature] *= e.x;
+    case 'classAtk':
+      m.classAtk[e.cls] *= e.x;
       break;
-    case 'classMult':
-      m.classMult[e.cls] *= e.x;
+    case 'globalAtk':
+      m.globalAtk *= e.x;
       break;
-    case 'globalMult':
-      m.globalMult *= e.x;
+    case 'classHp':
+      m.classHp[e.cls] *= e.x;
+      break;
+    case 'globalHp':
+      m.globalHp *= e.x;
+      break;
+    case 'classLife':
+      m.classLife[e.cls] *= e.x;
+      break;
+    case 'globalLife':
+      m.globalLife *= e.x;
       break;
     case 'classResist':
       m.resist[e.cls] += e.add;
       break;
-    case 'clickMult':
-      m.clickMult *= e.x;
+    case 'convertMult':
+      m.convertMult *= e.x;
       break;
-    case 'clickPct':
-      m.clickPct += e.add;
+    case 'productionMult':
+      m.productionMult *= e.x;
+      break;
+    case 'regenMult':
+      m.regenMult *= e.x;
+      break;
+    case 'bubbleMult':
+      m.bubbleMult *= e.x;
+      break;
+    case 'bubbleRate':
+      m.bubbleRate *= e.x;
+      break;
+    case 'incomeMult':
+      m.incomeMult *= e.x;
       break;
     case 'researchMult':
       m.researchMult *= e.x;
       break;
     case 'domesticationMult':
       m.domesticationMult *= e.x;
-      break;
-    case 'unlockBreeding':
-      m.breeding = true;
-      break;
-    case 'breedMult':
-      m.breedMult *= e.x;
       break;
     case 'unlockTide':
       m.tide = true;
@@ -112,20 +146,31 @@ function apply(m: Mods, e: Effect): void {
     case 'unlockActive':
       m.actives[e.id] = true;
       break;
-    case 'lairRegrowMult':
-      m.lairRegrowMult *= e.x;
+    case 'unlockBuilding':
+      m.unlocked[e.id] = true;
       break;
-    case 'lairLossMult':
-      m.lairLossMult *= e.x;
+    case 'enemyGround':
+      m.enemyGround[e.id] = true;
+      break;
+    case 'capAdd':
+      m.capAdd += e.add;
+      break;
+    case 'wildBuildMult':
+      m.wildBuild *= e.x;
+      break;
+    case 'spread':
+      m.spread += e.rate;
+      break;
+    case 'swarmBatch':
+      m.swarmBatch += e.add;
       break;
     case 'convert':
-    case 'unlockEra':
-      // One-off state changes, applied when bought.
+      // A one-off change, applied when bought.
       break;
   }
 }
 
-/** Meta-only part: forks, routes and starting money matter before a run exists. */
+/** Meta-only part: forks, routes and starting 自然之元 matter before a run exists. */
 export function metaMods(meta: MetaState, into: Mods = base()): Mods {
   for (const [id, level] of Object.entries(meta.levels)) {
     const def = META_BY_ID[id];
@@ -133,8 +178,11 @@ export function metaMods(meta: MetaState, into: Mods = base()): Mods {
     for (let i = 0; i < level && i < def.levels.length; i++) {
       for (const e of def.levels[i]!.effects) {
         switch (e.type) {
-          case 'globalMult':
-            into.globalMult *= e.x;
+          case 'productionMult':
+            into.productionMult *= e.x;
+            break;
+          case 'globalLife':
+            into.globalLife *= e.x;
             break;
           case 'researchMult':
             into.researchMult *= e.x;
@@ -142,8 +190,8 @@ export function metaMods(meta: MetaState, into: Mods = base()): Mods {
           case 'domesticationMult':
             into.domesticationMult *= e.x;
             break;
-          case 'startMoney':
-            into.startMoney = Math.max(into.startMoney, e.amount);
+          case 'startEssence':
+            into.startEssence = Math.max(into.startEssence, e.amount);
             break;
           case 'unlockFork':
             into.forksUnlocked[e.group] = true;
@@ -166,30 +214,9 @@ export function computeMods(state: GameState): Mods {
     const def = SKILL_BY_ID[id];
     if (def) for (const e of def.effects) apply(m, e);
   }
-  for (const id of Object.keys(run.upgrades)) {
-    const def = UPGRADE_BY_ID[id];
-    if (def) for (const e of def.effects) apply(m, e);
-  }
-  // Animals the humans tamed from you work against you.
-  if (run.defected.wolf !== undefined) {
-    m.dogs = true;
-    m.classMult.hunter *= DOMESTIC_EFFECTS.dogHunterMult;
-  }
-  if (run.defected.wildcat !== undefined) m.classMult.swarm *= DOMESTIC_EFFECTS.catSwarmMult;
-  if (run.defected.boar !== undefined) {
-    m.globalMult *= DOMESTIC_EFFECTS.pigGlobalMult;
-    m.researchMult *= 1 + BALANCE.research.pigBoost;
-  }
   for (const c of CLASS_IDS) m.resist[c] = Math.min(0.95, Math.max(0, m.resist[c]));
-  // Countermeasures already fielded.
-  for (const cm of run.countermeasures) {
-    m.classMult[cm.cls] *= 1 - BALANCE.research.countermeasure * (1 - m.resist[cm.cls]);
-  }
-  // Wrecked lairs: the species keeps working, just less of it.
-  const keep = Math.max(0, 1 - BALANCE.lairs.loss * m.lairLossMult);
-  for (const id of CREATURE_IDS) if ((run.lairs[id] ?? 0) > 0) m.creatureMult[id] *= keep;
-  // A raging disaster lifts the class that rides it.
-  const boost = disasterBoost(run);
-  if (boost) m.classMult[boost.cls] *= boost.x;
+  for (const cm of run.countermeasures) m.countered[cm.cls] *= 1 - BALANCE.research.countermeasure * (1 - m.resist[cm.cls]);
+  const d = run.disaster;
+  m.boost = d && d.phase === 'active' ? DISASTERS[d.id].boost : null;
   return m;
 }

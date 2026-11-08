@@ -17,21 +17,11 @@ export interface DomesticDef {
   id: DomesticId;
   name: string;
   from: CreatureId;
-  model: string;
 }
 
+/** Tamed from your side: they fight (dogs, cats) or graze (pigs) for the humans from then on. */
 export const DOMESTICS: Record<DomesticId, DomesticDef> = {
-  dog: { id: 'dog', name: '狗', from: 'wolf', model: 'dog' },
-  cat: { id: 'cat', name: '家猫', from: 'wildcat', model: 'cat' },
-  pig: { id: 'pig', name: '家猪', from: 'boar', model: 'pig' },
+  dog: { id: 'dog', name: '狗', from: 'wolf' },
+  cat: { id: 'cat', name: '家猫', from: 'wildcat' },
+  pig: { id: 'pig', name: '家猪', from: 'boar' },
 };
-
-/** Effects of a domesticated species on your side. Kept in one place for the UI to describe. */
-export const DOMESTIC_EFFECTS = {
-  /** Hunter class output while humans have dogs. */
-  dogHunterMult: 0.75,
-  /** Swarm class output while humans have cats. */
-  catSwarmMult: 0.6,
-  /** Global output while humans keep pigs (habitat loss). */
-  pigGlobalMult: 0.9,
-} as const;

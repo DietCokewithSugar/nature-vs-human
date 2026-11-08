@@ -18,13 +18,27 @@ export function Num({ value }: { value: DecimalSource }) {
   );
 }
 
-/** "$1.23M" with an optically raised, slightly smaller dollar sign. */
-export function Money({ value, class: cls }: { value: DecimalSource; class?: string }) {
+/** An amount of 自然之元: a small green orb and the number. */
+export function Essence({ value, class: cls }: { value: DecimalSource; class?: string }) {
   return (
     <span class={`money-text ${cls ?? ''}`}>
-      <span class="cur">$</span>
+      <span class="orb" aria-hidden="true" />
       <Num value={value} />
     </span>
+  );
+}
+
+/** A labelled bar: HP in red, lifespan in white, construction in gold. */
+export function Meter({ label, value, kind, text }: { label: string; value: number; kind: 'hp' | 'life' | 'build'; text?: string }) {
+  const v = Math.max(0, Math.min(1, value));
+  return (
+    <div class="meter" data-kind={kind} role="meter" aria-label={label} aria-valuenow={Math.round(v * 100)}>
+      <span class="meter-label">{label}</span>
+      <span class="meter-track">
+        <i style={{ transform: `scaleX(${Math.max(0.005, v)})` }} />
+      </span>
+      <span class="meter-val num">{text ?? `${Math.round(v * 100)}%`}</span>
+    </div>
   );
 }
 

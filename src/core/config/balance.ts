@@ -1,111 +1,177 @@
 import type { Difficulty } from '../types.ts';
 
 /**
- * Global tuning knobs. Every number the economy depends on lives in config/.
- *
- * References (see docs/balance.md):
- * - cost growth 1.15 per unit: Cookie Clicker buildings
- * - x2 at owned thresholds: AdVenture Capitalist milestones
- * - a cure meter racing your spread, countermeasures, run-based meta unlocks: Plague Inc.
+ * Global tuning knobs. Every number the simulation depends on lives in config/.
+ * See docs/balance.md for how they play out in bot runs (npm run report).
  */
 export const BALANCE = {
-  costGrowth: 1.15,
-  /** Owned counts at which a creature's output doubles. */
-  milestones: [10, 25, 50, 100, 150, 200, 250, 300, 400, 500],
-  milestoneMult: 2,
+  /** Seconds in one game day, and the hour a run starts at. */
+  day: 240,
+  startHour: 6,
+  /** Simulation step (seconds) and the most a single advance() may catch up. */
+  step: 0.1,
+  maxCatchUp: 120,
 
-  /** Tier i costs costBase × costStep^i and makes prodBase × prodStep^i per second. */
-  tiers: { costBase: 15, costStep: 8, prodBase: 0.2, prodStep: 7.2 },
-
-  /** Ancient megafauna lose this factor of output for every era they fall behind. */
-  obsolete: 0.5,
-
-  click: { base: 1 },
-
-  breeding: {
-    /** Bred units per second, per bought unit, per nest. */
-    ratePerNest: 0.0012,
-    nestBaseCost: 2_000,
-    nestCostGrowth: 7,
+  territory: {
+    /** Control runs from −100 (human) to +100 (nature); a cell changes hands past ±flip. */
+    flip: 50,
+    max: 100,
+    /** Points per second a held cell drifts back to its holder while nobody works it. */
+    recover: 0.8,
+    /** Seconds after the last work before a cell starts drifting back. */
+    recoverDelay: 6,
+    /** Dense forest and dunes resist being taken. */
+    neutralResist: 0.5,
+    /** A finished building claims its own cell this fast. */
+    buildingClaim: 8,
+    /** Nature units foraging on neutral ground slowly make it theirs. */
+    forageClaim: 0.8,
+    /** How hard each side's units work the ground, on top of their own convert rate. */
+    work: { nature: 0.8, human: 1 },
+    /** Wild ground fights back against clearing; machines get better at it each era. */
+    wildResist: 0.7,
+    humanWorkByEra: [0.8, 1, 1.15, 1.3],
+    /** Share of the open, holdable ground nature must hold in the modern era to win. */
+    winShare: 0.65,
   },
 
-  tide: {
-    period: 120,
-    baseAmp: 1,
-    surgeMult: 2,
-    surgeDuration: 30,
-    surgeCooldown: 180,
+  economy: {
+    natureStart: 160,
+    humanStart: 100,
+    /** 自然之元 per second for every cell held. */
+    naturePerCell: 0.05,
+    humanPerCell: 0.006,
+    /** The humans' trade and taxes, whatever ground they hold, by era. */
+    humanBase: [1.2, 1.8, 2.6, 3.4],
+    /** Humans draw this from each resource point they hold. */
+    humanPerNode: 0.15,
+    /** The humans dig in as they lose ground: income × (1 + weight × (nature's share − from)). */
+    panicFrom: 0.15,
+    panicWeight: 1.5,
+    /** Grazing pigs, and planes in the air. */
+    pigIncome: 0.12,
+    planeIncome: 0.5,
+    /** Each further building of a kind costs this much more. */
+    costGrowth: 1.22,
+    bubble: {
+      /** Value of one bubble by era. */
+      value: [5, 7, 10, 14],
+      /** Seconds before an uncollected bubble fades. */
+      life: 14,
+      /** Seconds between bubbles at one resource point. */
+      gap: [16, 26],
+    },
+  },
+
+  caps: {
+    /** Building slots: base + one per this many cells held. */
+    natureBase: 3,
+    naturePerCells: 7,
+    humanBase: 8,
+    humanPerCells: 14,
+    /** Living units per side, for the phone's sake. */
+    naturePop: 140,
+    humanPop: 110,
+  },
+
+  build: {
+    /** Seconds to build at full speed: base + cost / perCost. */
+    base: 6,
+    perCost: 25,
+    /** Speed on neutral ground and (with a skill) on enemy ground. */
+    wild: 0.2,
+    enemy: 0.35,
+  },
+
+  units: {
+    /** Seconds out of combat before wounds start to close. */
+    regenDelay: 6,
+    /** Share of max HP healed per second: out of combat, resting, foraging. */
+    regen: 0.012,
+    restRegen: 0.05,
+    forageRegen: 0.035,
+    /** Share of damage healed back when the target is a meal. */
+    lifesteal: 0.5,
+    /** Lifespans vary ±this share between individuals. */
+    lifeJitter: 0.15,
+    /** Day-to-day wobble of habits (hours). */
+    habitJitter: 0.5,
+    /** A unit in a fight keeps going this many seconds before it can be pulled off by a need. */
+    combatGrace: 3,
   },
 
   research: {
-    /** Fraction of the meter per second at the very start of a run, before modifiers. */
-    base: 0.00018,
-    /** Multiplier per era the humans have reached. */
-    eraMult: [1, 1.3, 1.65, 2.05],
-    /** How strongly progress on the bill speeds research up: × (floor + weight × progress). */
-    progressFloor: 0.4,
-    progressWeight: 1.6,
-    /** A countermeasure lands each time the meter crosses one of these. */
-    thresholds: [0.2, 0.4, 0.6, 0.8],
-    /** Output lost by the targeted class before resistance. */
-    countermeasure: 0.5,
-    /** Each domesticated pig herd speeds research up by this much. */
-    pigBoost: 0.2,
+    /** Research runs 0 → 4: each whole step is a new human era; 4 means the act passes. */
+    base: 0.00095,
+    /** Per level of each standing lab. */
+    perLab: 0.00048,
+    /** Per living shaman, scholar or researcher. */
+    perScholar: 0.00012,
+    /** Each step costs this much more than the one before. */
+    eraCost: [1, 1.3, 1.6, 1.9],
+    /**
+     * The more ground nature holds, the harder the humans work on it (Plague Inc.'s cure):
+     * research × (floor + weight × nature's share).
+     */
+    pressureFloor: 0.5,
+    pressureWeight: 1.3,
+    /** Nature already past the win share before the modern era: the humans rush their research. */
+    rush: 4,
+    /** Countermeasures land half way through each step. */
+    countermeasureAt: 0.5,
+    /** Attack a targeted class loses, before resistance. */
+    countermeasure: 0.4,
   },
 
   domestication: {
-    /** Meter per second at full exposure in the first era. */
-    base: 0.0022,
-    eraMult: [1, 1.25, 1.55, 1.9],
-    /** Owning this many of a species counts as full exposure. */
-    fullExposure: 60,
-    /** Dogs make hunters this much faster. */
-    dogBoost: 0.6,
+    /** Taming meter per animal captured, and per one killed by hunters. */
+    capture: 0.08,
+    kill: 0.025,
   },
 
   actives: {
     rescue: { cooldown: 90, amount: 0.35 },
     rampage: { cooldown: 150, duration: 20, mult: 3 },
-    sabotage: { cooldown: 240, amount: 0.03 },
+    sabotage: { cooldown: 200, amount: 0.12 },
   },
 
-  /** Humans march out to wreck the lair of your best earner. */
-  raids: {
-    /** Raid meter gained per unit of research gained: raids speed up with research. */
-    perResearch: 30,
-    /** Seconds to reach a lair at distance 1 (see ZONES). */
-    march: 25,
-  },
-
-  lairs: {
-    /** Output a species loses while its lair is wrecked. */
-    loss: 0.5,
-    /** Seconds a wrecked lair takes to grow back. */
-    regrow: 90,
+  tide: {
+    period: 120,
+    baseAmp: 0.6,
+    surgeMult: 2,
+    surgeDuration: 30,
+    surgeCooldown: 180,
   },
 
   disasters: {
     /** Disasters start in this era; the ice age stays quiet. */
     fromEra: 2,
-    /** Seconds from opening that era to the first warning. */
+    /** Seconds from the first eligible moment to the first warning. */
     first: 150,
-    /** Seconds between one disaster ending and the next warning. */
     gap: [300, 480],
+    /** Share of max HP lost per second by whatever stands in the zone (the boosted class is spared). */
+    damage: 0.035,
+  },
+
+  ai: {
+    /** Seconds between the humans' decisions. */
+    think: 3,
+    /** The share of income the humans spend on upgrades rather than new buildings. */
+    upgradeShare: 0.3,
   },
 
   difficulty: {
-    normal: { bill: 1e21, research: 1, hunters: 1, points: 1 },
-    hard: { bill: 1e23, research: 1.25, hunters: 1.25, points: 1.6 },
-    brutal: { bill: 1e24, research: 1.3, hunters: 1.5, points: 2.4 },
-  } satisfies Record<Difficulty, { bill: number; research: number; hunters: number; points: number }>,
+    normal: { income: 1, research: 1, hp: 1, points: 1 },
+    hard: { income: 1.4, research: 1.3, hp: 1.2, points: 1.6 },
+    brutal: { income: 1.7, research: 1.5, hp: 1.35, points: 2.4 },
+  } satisfies Record<Difficulty, { income: number; research: number; hp: number; points: number }>,
 
   meta: {
-    /** Points for a run: (base + perProgress × billProgress) × difficulty, plus a win bonus. */
+    /** Points for a run: (base + perProgress × progress) × difficulty, plus a win bonus. */
     base: 4,
     perProgress: 26,
     winBonus: 20,
   },
-
-  /** Catch-up chunking for long background ticks (seconds). */
-  maxChunks: 2_000,
 } as const;
+
+export const HOUR = BALANCE.day / 24;

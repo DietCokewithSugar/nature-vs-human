@@ -13,6 +13,9 @@ import '@radix-ui/colors/sky.css';
 import '@radix-ui/colors/gold.css';
 import '@radix-ui/colors/bronze.css';
 import '@radix-ui/colors/iris.css';
+import '@radix-ui/colors/jade.css';
+import '@radix-ui/colors/violet.css';
+import '@radix-ui/colors/slate.css';
 import '@radix-ui/colors/black-alpha.css';
 import '@radix-ui/colors/white-alpha.css';
 import '../styles/tokens.css';
@@ -22,31 +25,28 @@ import '../styles/ui.css';
 import { signal } from '@preact/signals';
 import { render } from 'preact';
 import {
+  BUILDINGS,
   CLASSES,
-  CREATURES,
-  CREATURE_BY_ID,
   DISASTERS,
   DOMESTICS,
   Game,
-  LAIRS,
-  BALANCE,
+  UNITS,
   exportSave,
-  formatMoney,
+  formatNumber,
   importSave,
-  tideLevel,
+  type BuildingId,
   type CoreEvent,
   type CreatureId,
   type Difficulty,
-  type EraId,
   type RouteId,
 } from '../core/index.ts';
 import { Leaderboard } from '../data/leaderboard.ts';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type Settings } from '../data/storage.ts';
-import { CityScene, type SceneView } from '../scene/city.ts';
+import { CityScene } from '../scene/city.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
 import { Sfx } from '../ui/sfx.ts';
-import { detail, flash, focusEra, frame, modal, pushFloat, pushToast, setApp } from '../ui/store.ts';
+import { detail, flash, frame, modal, placing, pushFloat, pushToast, rallying, setApp } from '../ui/store.ts';
 import { GameLoop } from './loop.ts';
 
 const game = new Game(loadGame());
@@ -59,65 +59,81 @@ const canvas = document.getElementById('scene') as HTMLCanvasElement;
 const scene = new CityScene(canvas);
 scene.setQuality(settings.value.quality);
 
-function repel(x?: number, y?: number): void {
-  if (!game.repel()) return;
-  sfx.upgrade();
-  const at = x !== undefined && y !== undefined ? { x, y } : scene.raidScreen();
-  if (at) pushFloat(at.x, at.y, COPY.toast.repelled);
-}
+// ── Taps on the map ────────────────────────────────────────────
 
-scene.onTap = ({ x, y, raid, lair }) => {
-  if (!game.running) return;
-  if (raid) {
-    repel(x, y);
-    return;
-  }
-  const gain = game.click();
-  sfx.click();
-  pushFloat(x, y, `+${formatMoney(gain)}`);
-  // Tapping a lair also opens its species' card.
-  if (lair && CREATURE_BY_ID[lair].era <= game.run.era) {
-    detail.value = lair;
-    modal.value = 'creature';
+scene.onBubble = (id, x, y) => {
+  const v = game.collect(id);
+  if (v > 0) {
+    sfx.click();
+    pushFloat(x, y, `+${formatNumber(v)}`);
   }
 };
 
-function sceneView(): SceneView {
-  const run = game.run;
-  const amounts = {} as Record<CreatureId, number>;
-  for (const c of CREATURES) amounts[c.id] = run.creatures[c.id].bought + run.creatures[c.id].bred;
-  const income = game.income();
-  return {
-    era: run.era,
-    amounts,
-    defected: run.defected,
-    taming: run.taming,
-    research: run.research,
-    tide: game.mods.tide,
-    tideLevel: tideLevel(run.tide.clock),
-    surge: game.mods.tide && run.tide.surgeLeft > 0,
-    rampage: run.rampageLeft > 0,
-    intensity: income.gt(0) ? income.log10() : 0,
-    outcome: run.result ? (run.result.won ? 'won' : 'lost') : 'running',
-    lairs: run.lairs,
-    raid: run.raid,
-    disaster: run.disaster,
-    creep: game.billProgress(),
-  };
+scene.onBuilding = (id) => {
+  detail.value = id;
+  modal.value = 'building';
+};
+
+scene.onUnit = (id) => {
+  detail.value = id;
+  modal.value = 'unit';
+};
+
+scene.onCell = (cell) => {
+  const kind = placing.value;
+  if (!kind) return;
+  const v = game.placeCheck(kind, cell);
+  if (!v.ok) {
+    sfx.deny();
+    pushToast({ title: COPY.build.badSite[v.why] ?? COPY.build.noSite, tone: 'bad' }, 1800);
+    return;
+  }
+  if (game.place(kind, cell)) {
+    sfx.buy();
+    stopPlacing();
+  }
+};
+
+scene.onRally = (x, z) => {
+  game.setRally(x, z);
+  rallying.value = false;
+  scene.setMode('normal');
+  sfx.upgrade();
+  pushToast({ title: COPY.toast.rallySet }, 1600);
+};
+
+function startPlacing(kind: BuildingId): void {
+  rallying.value = false;
+  placing.value = kind;
+  scene.setMode('place', game.sites(kind));
 }
+
+function stopPlacing(): void {
+  placing.value = null;
+  scene.setMode('normal');
+}
+
+// ── The loop ───────────────────────────────────────────────────
 
 /** Taming warnings fire once per species per run when the meter passes 70%. */
 const warned = new Set<CreatureId>();
 
 const loop = new GameLoop(game, () => {
-  scene.sync(sceneView());
-  if (focusEra.value !== scene.focusedEra) focusEra.value = scene.focusedEra;
+  scene.sync(game);
   for (const [id, v] of Object.entries(game.run.taming) as [CreatureId, number][]) {
     if (v > 0.7 && !warned.has(id)) {
       warned.add(id);
-      pushToast({ title: COPY.toast.taming(CREATURE_BY_ID[id].name) });
+      pushToast({ title: COPY.toast.taming(UNITS[id].name), tone: 'bad' });
       sfx.deny();
     }
+  }
+  // Keep the placement overlay honest as ground changes hands.
+  if (placing.value) {
+    const sites = game.sites(placing.value);
+    if (!sites.size || game.buildingCost(placing.value) > game.run.essence) {
+      if (!sites.size) pushToast({ title: COPY.build.noSite, tone: 'bad' }, 1800);
+      stopPlacing();
+    } else if (Math.random() < 0.1) scene.setMode('place', sites);
   }
 });
 
@@ -126,52 +142,50 @@ function save(): void {
 }
 
 function onEvent(e: CoreEvent): void {
+  scene.event(e);
   switch (e.type) {
     case 'eraUnlocked': {
       const t = COPY.toast.era[e.era];
-      if (t) pushToast({ ...t, era: e.era }, 5000);
+      if (t) pushToast({ ...t, era: e.era }, 5200);
       sfx.era();
+      if (placing.value) scene.setMode('place', game.sites(placing.value));
       save();
       break;
     }
     case 'countermeasure':
-      pushToast(COPY.toast.countermeasure(e.name, CLASSES[e.cm.cls].name), 5000);
-      scene.pulse('countermeasure');
+      pushToast({ ...COPY.toast.countermeasure(e.name, CLASSES[e.cm.cls].name), tone: 'bad' }, 5000);
       sfx.deny();
       break;
     case 'defected':
-      pushToast(COPY.toast.defected(CREATURE_BY_ID[e.id].name, DOMESTICS[e.domestic].name), 5000);
-      scene.defect(e.id);
+      pushToast({ ...COPY.toast.defected(UNITS[e.id].name, DOMESTICS[e.domestic].name), tone: 'bad' }, 5000);
       sfx.deny();
       save();
       break;
-    case 'active':
-      if (e.id === 'sabotage' || e.id === 'rescue' || e.id === 'rampage') scene.pulse(e.id);
+    case 'buildingDestroyed':
+      if (e.side === 'nature') {
+        pushToast({ ...COPY.toast.lostBuilding(BUILDINGS[e.kind].name), tone: 'bad' }, 3200);
+        sfx.deny();
+      } else {
+        pushToast({ title: COPY.toast.razed(BUILDINGS[e.kind].name), tone: 'good' }, 2200);
+      }
+      if (detail.value === e.id && modal.value === 'building') modal.value = null;
       break;
-    case 'raidStarted':
-      pushToast(COPY.toast.raid(LAIRS[e.target].name), 4000);
-      sfx.deny();
-      break;
-    case 'raidLanded':
-      pushToast(
-        COPY.toast.raidLanded(LAIRS[e.target].name, CREATURE_BY_ID[e.target].name, Math.round(BALANCE.lairs.loss * game.mods.lairLossMult * 100)),
-        4500,
-      );
-      sfx.deny();
+    case 'buildingDone':
+      if (e.side === 'nature') sfx.upgrade();
       break;
     case 'disasterWarning':
       sfx.deny();
       break;
     case 'disasterStarted': {
       const def = DISASTERS[e.id];
-      pushToast(COPY.toast.disaster(def.name, `${CLASSES[def.boost.cls].name} ×${def.boost.x}`, Math.round(e.research * 1000) / 10), 5000);
+      pushToast(COPY.toast.disaster(def.name, COPY.disaster.boost(CLASSES[def.boost.cls].name, def.boost.x)), 5000);
       sfx.era();
       save();
       break;
     }
     case 'runEnded':
       sfx.evolve();
-      if (e.result.won) scene.setForest(true);
+      stopPlacing();
       setTimeout(() => (modal.value = 'result'), e.result.won ? 2200 : 900);
       save();
       void leaderboard.submit(game.state, true);
@@ -179,14 +193,19 @@ function onEvent(e: CoreEvent): void {
     case 'runStarted':
       warned.clear();
       flash.value++;
+      stopPlacing();
       scene.reset();
-      scene.flyTo(1);
-      focusEra.value = 1;
       save();
+      pushToast(COPY.toast.welcome, 6000);
       break;
-    case 'upgradeBought':
     case 'skillBought':
       sfx.upgrade();
+      break;
+    case 'strike':
+      pushToast({ title: COPY.toast.strike(UNITS[e.bird].name), tone: 'good' }, 2400);
+      break;
+    case 'reset':
+      scene.reset();
       break;
     default:
       break;
@@ -205,10 +224,6 @@ setApp({
   game,
   settings,
   updateSettings,
-  flyTo: (era: EraId) => {
-    scene.flyTo(era);
-    focusEra.value = era;
-  },
   exportSave: () => exportSave(game.state),
   importSave: (text: string) => {
     try {
@@ -225,11 +240,34 @@ setApp({
     location.reload();
   },
   startRun: (route: RouteId, difficulty: Difficulty) => game.startRun(route, difficulty),
-  repel: () => repel(),
-  raidScreen: () => scene.raidScreen(),
+  startPlacing,
+  cancelPlacing: stopPlacing,
+  autoPlace: () => {
+    const kind = placing.value;
+    if (!kind) return;
+    const cell = game.autoSite(kind);
+    if (cell >= 0 && game.place(kind, cell)) {
+      sfx.buy();
+      stopPlacing();
+    } else {
+      sfx.deny();
+      pushToast({ title: COPY.build.noSite, tone: 'bad' }, 1800);
+    }
+  },
+  toggleRally: () => {
+    stopPlacing();
+    rallying.value = !rallying.value;
+    scene.setMode(rallying.value ? 'rally' : 'normal');
+  },
+  clearRally: () => {
+    game.clearRally();
+    rallying.value = false;
+    scene.setMode('normal');
+  },
   recenter: () => scene.recenter(),
   cameraMoved: () => scene.cameraMoved,
-  lookAtLair: (id) => scene.lookAtLair(id),
+  lookAt: (x, z) => scene.lookAt(x, z),
+  select: (id) => scene.select(id),
   leaderboard,
   sfx,
 });
@@ -237,17 +275,24 @@ setApp({
 render(<App onInsets={(i) => scene.setInsets(i)} />, document.getElementById('ui')!);
 
 window.addEventListener('resize', () => scene.resize());
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && (placing.value || rallying.value)) {
+    stopPlacing();
+    rallying.value = false;
+  }
+});
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') save();
 });
 window.addEventListener('pagehide', save);
 
-scene.sync(sceneView());
+scene.sync(game);
 if (game.run.result) modal.value = 'result';
+else if (game.run.time < 1) pushToast(COPY.toast.welcome, 6000);
 loop.start();
 setInterval(() => frame.value++, 125);
 setInterval(() => {
-  document.title = `${formatMoney(game.run.money)} · ${COPY.title}`;
+  document.title = `${formatNumber(Math.floor(game.run.essence))} ${COPY.essence} · ${COPY.title}`;
 }, 2000);
 setInterval(save, 10_000);
 setInterval(() => void leaderboard.submit(game.state), 30_000);

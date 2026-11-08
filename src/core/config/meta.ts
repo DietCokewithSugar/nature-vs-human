@@ -2,29 +2,20 @@ import type { Difficulty, Effect, MetaUpgradeDef, RouteId } from '../types.ts';
 
 /** Permanent upgrades bought with points earned at the end of every run. */
 export const META_UPGRADES: readonly MetaUpgradeDef[] = [
-  {
-    id: 'route_plague',
-    name: '瘟疫',
-    kind: 'route',
-    levels: [{ cost: 30, effects: [{ type: 'unlockRoute', route: 'plague' }] }],
-  },
-  {
-    id: 'fork_assassin',
-    name: '精神污染',
-    kind: 'fork',
-    levels: [{ cost: 15, effects: [{ type: 'unlockFork', group: 'assassin' }] }],
-  },
-  {
-    id: 'fork_tank',
-    name: '践踏',
-    kind: 'fork',
-    levels: [{ cost: 15, effects: [{ type: 'unlockFork', group: 'tank' }] }],
-  },
+  { id: 'route_plague', name: '瘟疫', kind: 'route', levels: [{ cost: 30, effects: [{ type: 'unlockRoute', route: 'plague' }] }] },
+  { id: 'fork_assassin', name: '精神污染', kind: 'fork', levels: [{ cost: 15, effects: [{ type: 'unlockFork', group: 'assassin' }] }] },
+  { id: 'fork_tank', name: '践踏', kind: 'fork', levels: [{ cost: 15, effects: [{ type: 'unlockFork', group: 'tank' }] }] },
   {
     id: 'perk_growth',
     name: '多产',
     kind: 'perk',
-    levels: [10, 25, 50].map((cost) => ({ cost, effects: [{ type: 'globalMult' as const, x: 1.15 }] })),
+    levels: [10, 25, 50].map((cost) => ({ cost, effects: [{ type: 'productionMult' as const, x: 1.1 }] })),
+  },
+  {
+    id: 'perk_long',
+    name: '长寿',
+    kind: 'perk',
+    levels: [12, 30].map((cost) => ({ cost, effects: [{ type: 'globalLife' as const, x: 1.12 }] })),
   },
   {
     id: 'perk_quiet',
@@ -43,8 +34,8 @@ export const META_UPGRADES: readonly MetaUpgradeDef[] = [
     name: '囤粮',
     kind: 'perk',
     levels: [
-      { cost: 8, effects: [{ type: 'startMoney', amount: 500 }] },
-      { cost: 30, effects: [{ type: 'startMoney', amount: 20_000 }] },
+      { cost: 8, effects: [{ type: 'startEssence', amount: 260 }] },
+      { cost: 30, effects: [{ type: 'startEssence', amount: 450 }] },
     ],
   },
 ];
@@ -66,9 +57,9 @@ export const ROUTES: Record<RouteId, RouteDef> = {
     id: 'plague',
     name: '瘟疫',
     effects: [
-      { type: 'classMult', cls: 'assassin', x: 1.5 },
-      { type: 'classMult', cls: 'swarm', x: 1.5 },
-      { type: 'classMult', cls: 'tank', x: 0.6 },
+      { type: 'classAtk', cls: 'assassin', x: 1.5 },
+      { type: 'classAtk', cls: 'swarm', x: 1.5 },
+      { type: 'classAtk', cls: 'tank', x: 0.6 },
       { type: 'researchMult', x: 1.1 },
     ],
     freeSkills: ['as_virus'],

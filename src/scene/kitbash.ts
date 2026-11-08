@@ -120,6 +120,17 @@ export const VARIANTS: Record<string, VariantSpec> = {
     base: 'ant',
     ramp: [amber.amber11, sand.sand4],
   },
+  bee: {
+    base: 'wasp',
+    ramp: [amber.amber10, amber.amber9],
+    pattern: { kind: 'bands', ramp: [slate.slate12, slate.slate11], freq: 18 },
+    stretch: [1, 0.95, 0.8],
+  },
+  taxi: {
+    base: 'coupe',
+    ramp: [amber.amber10, amber.amber9],
+    contrast: 0.35,
+  },
 };
 
 /** Model key for each creature view. Plain keys load the file of the same name. */

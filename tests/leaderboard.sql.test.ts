@@ -3,6 +3,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const MIGRATION = readFileSync(new URL('../supabase/migrations/20261106000000_leaderboard.sql', import.meta.url), 'utf8');
+const TERRITORY = readFileSync(new URL('../supabase/migrations/20261108000000_territory_board.sql', import.meta.url), 'utf8');
 
 const ALICE = '00000000-0000-4000-8000-000000000001';
 const BOB = '00000000-0000-4000-8000-000000000002';
@@ -57,6 +58,7 @@ beforeAll(async () => {
     insert into auth.users (id) values ('${ALICE}'), ('${BOB}'), ('${CAROL}');
   `);
   await db.exec(MIGRATION);
+  await db.exec(TERRITORY);
 }, 60_000);
 
 describe('leaderboard SQL', () => {
@@ -136,5 +138,72 @@ describe('leaderboard SQL', () => {
     // A 1e23 bill in about 34 minutes, the fastest the bots manage.
     const [row] = (await db.query<{ v: number }>('select public.max_plausible_log10(34 / 60.0) as v')).rows;
     expect(row!.v).toBeGreaterThan(23);
+  });
+});
+
+interface Territory {
+  name?: string;
+  best: number;
+  play: number;
+  runs?: number;
+  wins?: number;
+  normal?: number | null;
+}
+
+const claim = (uid: string | null, o: Territory) =>
+  as(uid, `select public.submit_territory($1, $2, $3, $4, $5, $6, $7, $8)`, [
+    o.name ?? 'tester',
+    o.best,
+    o.play,
+    o.runs ?? 0,
+    o.wins ?? 0,
+    o.normal ?? null,
+    null,
+    null,
+  ]);
+
+const ageTerritory = (uid: string, seconds: number) =>
+  db.query(`update public.territory_scores set updated_at = now() - make_interval(secs => $2) where player_id = $1`, [uid, seconds]);
+
+describe('territory leaderboard SQL', () => {
+  it('rejects anonymous callers', async () => {
+    await expect(claim(null, { best: 12, play: 10 })).rejects.toThrow(/not authenticated/);
+  });
+
+  it('ranks players by the best share they held', async () => {
+    await claim(ALICE, { name: '记仇的蚊子#0001', best: 30.5, play: 900, runs: 1 });
+    await claim(BOB, { name: '在逃的章鱼#0002', best: 48, play: 1800, runs: 1 });
+    const rows = await as<{ nickname: string; value: number; is_me: boolean }>(ALICE, 'select * from public.territory_best(10)');
+    expect(rows.map((r) => r.nickname)).toEqual(['在逃的章鱼#0002', '记仇的蚊子#0001']);
+    expect(rows[1]!.is_me).toBe(true);
+    expect(rows[0]!.value).toBe(48);
+  });
+
+  it('keeps the best share and the fastest win', async () => {
+    await ageTerritory(BOB, 7200);
+    await claim(BOB, { best: 72, play: 1800 + 3600, runs: 2, wins: 1, normal: 2700 });
+    await ageTerritory(BOB, 60);
+    await claim(BOB, { best: 50, play: 1800 + 3650, runs: 3, wins: 2, normal: 3000 });
+    const [row] = (await db.query<{ best_territory: number; fastest_normal_s: number }>(
+      `select best_territory, fastest_normal_s from public.territory_scores where player_id = $1`,
+      [BOB],
+    )).rows;
+    expect(row!.best_territory).toBe(72);
+    expect(row!.fastest_normal_s).toBe(2700);
+    const fast = await as<{ value: number }>(CAROL, `select * from public.territory_fastest('normal', 10)`);
+    expect(fast[0]!.value).toBe(2700);
+  });
+
+  it('refuses shares no play could reach, impossible wins and bad input', async () => {
+    await expect(claim(CAROL, { best: 95, play: 120 })).rejects.toThrow(/implausible score/);
+    await expect(claim(CAROL, { best: 101, play: 9000 })).rejects.toThrow(/invalid score/);
+    await expect(claim(CAROL, { best: 40, play: 9000, runs: 1, wins: 1, normal: 300 })).rejects.toThrow(/win time/);
+    await expect(claim(CAROL, { best: 40, play: 9000, runs: 1, wins: 2 })).rejects.toThrow(/invalid progress/);
+  });
+
+  it('blocks direct table access for client roles', async () => {
+    await db.exec('set role authenticated');
+    await expect(db.query('select * from public.territory_scores')).rejects.toThrow(/permission denied/);
+    await db.exec('reset role');
   });
 });
