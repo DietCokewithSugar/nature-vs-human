@@ -1,63 +1,76 @@
 /*
- * Design tokens. Every colour is a Radix Colors step (light theme only).
- * Radix step roles:
- *   1–2  app / subtle backgrounds      3–5  component backgrounds (rest / hover / pressed)
- *   6–8  borders (subtle / default / hover + focus)   9–10 solid fills (rest / hover)
- *   11   low-contrast text             12   high-contrast text
- * Bright scales (lime, amber, sky) take dark text on step 9; the rest take white.
+ * Design tokens. Pixel-art UI in the Stardew / Terraria tradition: parchment panels in wooden
+ * frames, square corners, hard one-pixel shadows, one pixel font. Every colour comes from the
+ * map's palette (Resurrect 64): the Radix names used below are re-pointed in palette.css.
+ * One UI pixel (--u) is 2 CSS px, the same size as a map pixel on a phone.
  */
-:root {
-  /*
-   * Cartoon look: solid paper panels with a warm ink outline, and buttons with a visible
-   * thickness (a darker band along the bottom) that squashes when pressed.
-   */
-  --ink: var(--gold-12);
-  --ink-soft: var(--gold-11);
-  --paper: var(--gold-2);
-  --paper-sunken: var(--gold-4);
-  --paper-line: var(--gold-6);
-  --paper-line-strong: var(--gold-7);
-  --card: var(--olive-1);
+@font-face {
+  font-family: 'Pixel UI';
+  /* The characters the game prints (npm run font). */
+  src: url('/fonts/pixel-ui.woff2') format('woff2');
+  font-display: block;
+}
 
-  --app-bg-top: var(--sky-4);
-  --app-bg-bottom: var(--olive-2);
-  --focus: var(--sky-8);
+@font-face {
+  font-family: 'Fusion Pixel';
+  /* The whole font: only downloaded if some text (a nickname) needs a character the subset lacks. */
+  src: url('/fonts/fusion-pixel-12px.woff2') format('woff2');
+  font-display: swap;
+}
+
+:root {
+  --u: 2px;
+
+  --ink: #2e222f;
+  --ink-soft: #3e3546;
+  /* Panels are deep parchment; cards and slots inside them are lighter paper. */
+  --paper: #fbb954;
+  --paper-sunken: #e6904e;
+  --paper-line: #cd683d;
+  --paper-line-strong: #9e4539;
+  --card: #fdcbb0;
+  --wood: #cd683d;
+
+  --app-bg-top: #4d9be6;
+  --app-bg-bottom: #2e222f;
+  --focus: #fbff86;
 
   /* Text */
   --text: var(--ink);
-  --text-muted: var(--gold-11);
-  --text-on-solid: white;
+  --text-muted: #694f62;
+  --text-on-solid: #ffffff;
 
   /* Accents */
-  --brand: var(--grass-9);
-  --brand-side: var(--grass-11);
-  --brand-text: var(--grass-11);
-  --money: var(--amber-11);
-  --danger: var(--tomato-9);
-  --danger-side: var(--tomato-11);
-  --danger-text: var(--tomato-11);
+  --brand: #1ebc73;
+  --brand-side: #239063;
+  --brand-text: #165a4c;
+  --money: #9e4539;
+  --danger: #e83b3b;
+  --danger-side: #ae2334;
+  --danger-text: #ae2334;
 
-  /* Outlines and hard shadows */
+  /* Outlines and hard shadows: whole UI pixels, never blurred. */
   --line: 2px;
-  --line-bold: 3px;
+  --line-bold: 2px;
   --lift: 4px;
-  --drop: 0 4px 0 var(--black-a4);
+  --drop: 0 4px 0 #2e222f59;
   --drop-ink: 0 2px 0 var(--ink);
 
-  /* Concentric radii: inner = outer − the padding between them. */
-  --r-panel: 22px;
+  /* Square corners: frames cut a pixel notch instead (pixel.css). */
+  --r-panel: 0px;
   --p-panel: 8px;
-  --r-card: calc(var(--r-panel) - var(--p-panel)); /* 14 */
+  --r-card: 0px;
   --p-card: 6px;
-  --r-control: calc(var(--r-card) - var(--p-card)); /* 8 */
-  --r-modal: 26px;
+  --r-control: 0px;
+  --r-modal: 0px;
   --p-modal: 12px;
-  --r-modal-card: calc(var(--r-modal) - var(--p-modal)); /* 14 */
+  --r-modal-card: 0px;
+  --r-in: 0px;
 
-  /* Type */
-  --font-ui: 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans', 'Microsoft YaHei', 'Noto Sans SC', system-ui, sans-serif;
-  --font-display: 'ZCOOL KuaiLe', var(--font-ui);
-  --font-num: 'Fredoka Variable', 'Fredoka', var(--font-ui);
+  /* Type: one pixel font. Sizes are 12 / 18 / 24 / 36 px so its pixels land on whole device pixels. */
+  --font-ui: 'Pixel UI', 'Fusion Pixel', monospace;
+  --font-display: var(--font-ui);
+  --font-num: var(--font-ui);
 
   --gap: 8px;
   --panel-w: 400px;

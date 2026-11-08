@@ -1,17 +1,6 @@
 import { useEffect, useState } from 'preact/hooks';
 import { formatNumber, type DecimalSource } from '../core/index.ts';
-import { LOOK } from '../shell/look.ts';
-
-export interface ThumbOptions {
-  /** Keep only the top part of the picture (0–1 of its height): 0.5 frames a person as a bust. */
-  crop?: number;
-  /** How much of the square the silhouette fills. */
-  fill?: number;
-}
-
-/** Pixel sprites, or 3D renders when the old look is on (three.js loads only then). */
-const thumbnail = (model: string, opts: ThumbOptions): Promise<string> =>
-  LOOK === '3d' ? import('../scene/thumbnails.ts').then((m) => m.thumbnail(model, opts)) : import('../pixel/thumbs.ts').then((m) => m.thumbnail(model, opts));
+import { thumbnail, type ThumbOptions } from '../pixel/thumbs.ts';
 
 /**
  * A short-scale number whose suffix ("Oc", "Qa") is set in the UI face:
@@ -65,7 +54,7 @@ export function Thumb({ model, crop, fill, class: cls }: { model: string; class?
       live = false;
     };
   }, [model, crop, fill]);
-  return <span class={`thumb ${cls ?? ''}`}>{src && <img src={src} alt="" draggable={false} data-pixel={LOOK === 'pixel' || undefined} />}</span>;
+  return <span class={`thumb ${cls ?? ''}`}>{src && <img src={src} alt="" draggable={false} />}</span>;
 }
 
 /** The scientist stands for the humans' research wherever it shows up. */

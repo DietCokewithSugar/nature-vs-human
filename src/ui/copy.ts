@@ -287,10 +287,6 @@ export const COPY = {
     title: '设置',
     sound: '音效',
     quality: '画质',
-    look: '画面',
-    lookPixel: '像素',
-    look3d: '3D',
-    lookNote: '切换后会重新载入页面',
     qualityHigh: '高',
     qualityLow: '省电',
     on: '开',
@@ -306,9 +302,9 @@ export const COPY = {
     resetYes: '清空',
     cancel: '算了',
     credits: '制作人员',
-    creditsModels: '3D 模型（像素精灵由它们渲染而来）',
+    creditsModels: '3D 模型（像素图由它们渲染而来）',
     creditsModelsNote: '已压缩；部分模型重新上色并加了牙、角等部件；像素画面里的动物和建筑由这些模型渲染、缩小并换成统一调色板',
-    creditsOther: '字体、配色与代码库',
+    creditsOther: '字体、调色板与代码库',
   },
 
   toast: {

@@ -1,0 +1,62 @@
+/*
+ * The Radix colour names the UI was written with, re-pointed at Resurrect 64 (the map's
+ * palette), so every pixel on screen comes from one set of 64 colours. Each hue keeps the Radix
+ * step roles: 1–2 backgrounds, 3–5 component backgrounds, 6–8 borders, 9–10 solids, 11–12 text.
+ */
+:root {
+  --grass-1: #c7dcd0; --grass-2: #c7dcd0; --grass-3: #cddf6c; --grass-4: #cddf6c; --grass-5: #91db69; --grass-6: #91db69;
+  --grass-7: #1ebc73; --grass-8: #1ebc73; --grass-9: #1ebc73; --grass-10: #239063; --grass-11: #165a4c; --grass-12: #165a4c;
+
+  --lime-1: #fbff86; --lime-2: #fbff86; --lime-3: #cddf6c; --lime-4: #cddf6c; --lime-5: #d5e04b; --lime-6: #d5e04b;
+  --lime-7: #a2a947; --lime-8: #a2a947; --lime-9: #d5e04b; --lime-10: #a2a947; --lime-11: #676633; --lime-12: #4c3e24;
+
+  --jade-9: #0eaf9b;
+
+  --amber-1: #fdcbb0; --amber-2: #fdcbb0; --amber-3: #fdcbb0; --amber-4: #fbb954; --amber-5: #fbb954; --amber-6: #fbb954;
+  --amber-7: #f9c22b; --amber-8: #f79617; --amber-9: #f9c22b; --amber-10: #f79617; --amber-11: #9e4539; --amber-12: #4c3e24;
+
+  --gold-1: #fdcbb0; --gold-2: #fdcbb0; --gold-3: #fdcbb0; --gold-4: #fca790; --gold-5: #fca790; --gold-6: #e6904e;
+  --gold-7: #cd683d; --gold-8: #cd683d; --gold-9: #cd683d; --gold-10: #9e4539; --gold-11: #694f62; --gold-12: #2e222f;
+
+  --tomato-1: #fdcbb0; --tomato-2: #fdcbb0; --tomato-3: #fca790; --tomato-4: #fca790; --tomato-5: #f68181; --tomato-6: #f68181;
+  --tomato-7: #f68181; --tomato-8: #e83b3b; --tomato-9: #e83b3b; --tomato-10: #b33831; --tomato-11: #ae2334; --tomato-12: #6e2727;
+
+  --orange-1: #fdcbb0; --orange-2: #fdcbb0; --orange-3: #fdcbb0; --orange-4: #fca790; --orange-5: #fca790; --orange-6: #e6904e;
+  --orange-7: #e6904e; --orange-8: #f57d4a; --orange-9: #fb6b1d; --orange-10: #ea4f36; --orange-11: #9e4539; --orange-12: #6e2727;
+
+  --brown-1: #fdcbb0; --brown-2: #fdcbb0; --brown-3: #fdcbb0; --brown-4: #fca790; --brown-5: #e6904e; --brown-6: #ab947a;
+  --brown-7: #966c6c; --brown-8: #966c6c; --brown-9: #9e4539; --brown-10: #7a3045; --brown-11: #4c3e24; --brown-12: #2e222f;
+
+  --bronze-1: #fdcbb0; --bronze-2: #fdcbb0; --bronze-3: #fdcbb0; --bronze-4: #fca790; --bronze-5: #e6904e; --bronze-6: #cd683d;
+  --bronze-7: #cd683d; --bronze-8: #9e4539; --bronze-9: #9e4539; --bronze-10: #7a3045; --bronze-11: #6e2727; --bronze-12: #2e222f;
+
+  --cyan-1: #8ff8e2; --cyan-2: #8ff8e2; --cyan-3: #8ff8e2; --cyan-4: #8ff8e2; --cyan-5: #30e1b9; --cyan-6: #30e1b9;
+  --cyan-7: #0eaf9b; --cyan-8: #0eaf9b; --cyan-9: #0b8a8f; --cyan-10: #0b5e65; --cyan-11: #0b5e65; --cyan-12: #165a4c;
+
+  --sky-1: #8fd3ff; --sky-2: #8fd3ff; --sky-3: #8fd3ff; --sky-4: #8fd3ff; --sky-5: #8fd3ff; --sky-6: #4d9be6;
+  --sky-7: #4d9be6; --sky-8: #4d9be6; --sky-9: #8fd3ff; --sky-10: #4d9be6; --sky-11: #4d65b4; --sky-12: #323353;
+
+  --iris-1: #eaaded; --iris-2: #eaaded; --iris-3: #eaaded; --iris-4: #eaaded; --iris-5: #a884f3; --iris-6: #a884f3;
+  --iris-7: #a884f3; --iris-8: #905ea9; --iris-9: #4d65b4; --iris-10: #484a77; --iris-11: #484a77; --iris-12: #323353;
+
+  --violet-9: #905ea9;
+
+  --olive-1: #fdcbb0; --olive-2: #c7dcd0; --olive-3: #c7dcd0; --olive-4: #c7dcd0; --olive-5: #9babb2; --olive-6: #9babb2;
+  --olive-7: #9babb2; --olive-8: #7f708a; --olive-9: #625565; --olive-10: #3e3546; --olive-11: #3e3546; --olive-12: #2e222f;
+
+  --slate-12: #2e222f;
+
+  /* See-through shades: the palette's ink and white at fixed opacities. */
+  --black-a1: #2e222f0d; --white-a1: #ffffff0d;
+  --black-a2: #2e222f1a; --white-a2: #ffffff1a;
+  --black-a3: #2e222f26; --white-a3: #ffffff26;
+  --black-a4: #2e222f33; --white-a4: #ffffff33;
+  --black-a5: #2e222f4c; --white-a5: #ffffff4c;
+  --black-a6: #2e222f66; --white-a6: #ffffff66;
+  --black-a7: #2e222f80; --white-a7: #ffffff80;
+  --black-a8: #2e222f99; --white-a8: #ffffff99;
+  --black-a9: #2e222fb2; --white-a9: #ffffffb2;
+  --black-a10: #2e222fcc; --white-a10: #ffffffcc;
+  --black-a11: #2e222fe6; --white-a11: #ffffffe6;
+  --black-a12: #2e222ff2; --white-a12: #fffffff2;
+}

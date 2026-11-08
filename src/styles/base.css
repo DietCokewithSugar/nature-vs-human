@@ -13,10 +13,15 @@ body {
 body {
   font-family: var(--font-ui);
   color: var(--text);
-  background: linear-gradient(180deg, var(--app-bg-top) 0%, var(--app-bg-bottom) 75%);
+  background: var(--app-bg-bottom);
+  font-size: 12px;
+  line-height: 1.5;
   overflow: hidden;
   overscroll-behavior: none;
-  -webkit-font-smoothing: antialiased;
+  /* Pixel glyphs: no smoothing, no synthetic bold (the font has one weight). */
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeSpeed;
   -webkit-tap-highlight-color: transparent;
   -webkit-user-select: none;
   user-select: none;
@@ -67,8 +72,8 @@ a {
 }
 
 :focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+  outline: var(--u) solid var(--focus);
+  outline-offset: var(--u);
 }
 
 .num {

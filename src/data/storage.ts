@@ -59,13 +59,11 @@ export function clearGame(): void {
 export interface Settings {
   muted: boolean;
   quality: 'high' | 'low';
-  /** Pixel art (PixiJS, the default) or the old 3D scene (three.js). Takes effect on reload. */
-  look: 'pixel' | '3d';
 }
 
 export function defaultSettings(): Settings {
   const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
-  return { muted: false, quality: coarse ? 'low' : 'high', look: 'pixel' };
+  return { muted: false, quality: coarse ? 'low' : 'high' };
 }
 
 export function loadSettings(): Settings {
@@ -77,7 +75,6 @@ export function loadSettings(): Settings {
     return {
       muted: typeof raw.muted === 'boolean' ? raw.muted : base.muted,
       quality: raw.quality === 'low' || raw.quality === 'high' ? raw.quality : base.quality,
-      look: raw.look === '3d' || raw.look === 'pixel' ? raw.look : base.look,
     };
   } catch {
     return base;

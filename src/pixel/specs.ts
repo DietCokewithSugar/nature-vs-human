@@ -15,7 +15,8 @@ export const UNIT_ELEVATION = 28;
 export const HUMAN_ELEVATION = 14;
 export const SCENERY_ELEVATION = 40;
 
-export type AnimKind = 'clip' | 'rig' | 'wings' | 'still';
+/** People are drawn in code (src/bake/people.ts), so they are never baked: 'drawn'. */
+export type AnimKind = 'clip' | 'drawn' | 'wings' | 'still';
 
 export interface SpriteSpec {
   key: string;
@@ -50,7 +51,7 @@ const UNIT_PX: Record<UnitId, number> = {
   dog: 13, cat: 11, pig: 14,
 };
 
-/** Unit bodies, mirrored from scene/creatures.ts so the pixel build does not load the 3D views. */
+/** The 3D body each unit is baked from (people: the model only stands in for UI lookups). */
 const UNIT_BODY: Record<UnitId, { model: string; human?: boolean; move?: string[]; rest?: string[]; tint?: string; wings?: boolean }> = {
   // Small insects are tinted brighter than life so they stand off the ground.
   ant: { model: 'ant', tint: '#e83b3b' }, wolf: { model: 'wolf' }, sabertooth: { model: 'sabertooth' }, cavebear: { model: 'cavebear' }, mammoth: { model: 'mammoth' },
@@ -131,7 +132,7 @@ export function allSpecs(): SpriteSpec[] {
       elevation: body.human ? HUMAN_ELEVATION : UNIT_ELEVATION,
       // Facing right, turned a little towards the viewer (people more, so faces show).
       yaw: Math.PI / 2 - (body.human ? 0.85 : 0.22),
-      anim: body.human ? 'rig' : body.wings ? 'wings' : 'clip',
+      anim: body.human ? 'drawn' : body.wings ? 'wings' : 'clip',
       move: body.move,
       rest: body.rest,
       tint: body.tint,
