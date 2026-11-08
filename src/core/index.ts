@@ -1,31 +1,33 @@
 export * from './bignum.ts';
 export * from './types.ts';
 export * from './state.ts';
-export * from './progression.ts';
 export * from './format.ts';
 export * from './save.ts';
-export { Game, type CoreEvent, type PlaceProblem, type PlaceVerdict } from './game.ts';
-export { computeMods, metaMods, type Mods } from './modifiers.ts';
-export { tideLevel, tideMult, tideRising } from './sim/tide.ts';
-export { absHour, dayOf, daylight, hourOf, inWindow, isNight, sinceHabit } from './sim/clock.ts';
-export { NEUTRAL, NATURE as NATURE_CODE, HUMAN as HUMAN_CODE, World, type Objective } from './sim/world.ts';
-export { natureShare, humanShare, ownerOf } from './sim/territory.ts';
-export { bubbleValue, humanIncomeParts, type HumanIncomeParts } from './sim/economy.ts';
-export { strongestClass, researchParts, type ResearchParts } from './sim/humans.ts';
-export { spawnPool } from './sim/buildings.ts';
-export { isMeal, vsMult } from './sim/units.ts';
-export { auraRadius, auraLive } from './sim/auras.ts';
-export { buildTime, birthInterval, maxAlive } from './sim/stats.ts';
+export { Game, type CoreEvent, type BuildProblem, type BuildVerdict } from './game.ts';
 export type { DeathCause } from './sim/events.ts';
 export { nextRandom, randomSeed } from './rng.ts';
-export * from './map/grid.ts';
-export { Nav, type NavMode } from './map/nav.ts';
-export { BALANCE, HOUR } from './config/balance.ts';
-export { DISASTERS, type DisasterDef } from './config/disasters.ts';
-export { CLASSES, type ClassDef } from './config/classes.ts';
-export { UNITS, CREATURE_IDS, HUMAN_UNIT_IDS, DOMESTIC_IDS, FIGHTERS, TAMEABLE, isAnimal, type UnitDef, type UnitRole, type Habit, type Diet } from './config/units.ts';
-export { BUILDINGS, NATURE_BUILDINGS, HUMAN_BUILDINGS, LEVELS, buildingTags, isEffect, homesOf as buildingsMaking, type Aura, type BuildingDef, type SpawnEntry, type Material } from './config/buildings.ts';
-export { ERAS, type EraDef } from './config/eras.ts';
-export { SKILLS, SKILL_BY_ID, BRANCH_NAMES, skillsOfBranch } from './config/skills.ts';
-export { META_UPGRADES, META_BY_ID, ROUTES, DIFFICULTY_NAMES, DIFFICULTY_GATE, type RouteDef } from './config/meta.ts';
-export { COUNTERMEASURES, DOMESTICS, countermeasureName, type DomesticDef } from './config/humans.ts';
+export * from './map/layout.ts';
+export { BALANCE } from './config/balance.ts';
+export { UNITS, HERBIVORES, PREDATORS, SOLDIERS, PACK, CHARGE, EXECUTE, THICK, counterMult, type UnitDef, type Special } from './config/units.ts';
+export { BUILDINGS, NATURE_BUILDABLE, HUMAN_BUILDABLE, nestOf, type BuildingDef, type TowerDef } from './config/buildings.ts';
+export { PICKS, PICK_BY_ID, type PickDef, type PickEffect } from './config/picks.ts';
+export { TALENTS, TALENT_IDS, talentCost, type TalentDef, type TalentId } from './config/talents.ts';
+export {
+  computeMods,
+  levelMult,
+  humanLevel,
+  unitMaxHp,
+  unitAtk,
+  unitEat,
+  unitMeat,
+  unitSpeed,
+  spawnInterval,
+  meadowGrass,
+  motherIncome,
+  levelCost,
+  towerDmg,
+  type Mods,
+} from './sim/stats.ts';
+export { natureFood, humanFood, natureIncome, humanIncome, held, type FoodLine, type FoodSummary, type IncomeParts } from './sim/economy.ts';
+export { ownerOf, segOwner, padUser, buildingOnPad, mainOf } from './sim/ctx.ts';
+export { humanCost } from './sim/ai.ts';

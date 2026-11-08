@@ -15,10 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sim": "node --experimental-strip-types --no-warnings scripts/simulate.ts",
-    "assets": "node scripts/fetch-assets.mjs",
     "report": "node --experimental-strip-types --no-warnings scripts/report.ts",
-    "models": "node scripts/build-models.mjs",
-    "sprites": "node scripts/bake-sprites.mjs",
+    "sprites": "python3 art/build.py",
     "font": "node scripts/subset-font.mjs",
     "frames": "node scripts/ui-frames.mjs"
   },
@@ -32,13 +30,10 @@
   "devDependencies": {
     "@electric-sql/pglite": "0.5.12",
     "@fontsource/fusion-pixel-12px-proportional-sc": "5.3.0",
-    "@gltf-transform/cli": "4.4.2",
     "@preact/preset-vite": "2.10.6",
     "@radix-ui/colors": "3.0.0",
     "@types/node": "22.19.1",
-    "@types/three": "0.186.0",
     "subset-font": "2.9.0",
-    "three": "0.186.1",
     "typescript": "6.0.3",
     "vite": "8.3.5",
     "vitest": "5.0.5"

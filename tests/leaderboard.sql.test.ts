@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 const MIGRATION = readFileSync(new URL('../supabase/migrations/20261106000000_leaderboard.sql', import.meta.url), 'utf8');
 const TERRITORY = readFileSync(new URL('../supabase/migrations/20261108000000_territory_board.sql', import.meta.url), 'utf8');
+const STAGE = readFileSync(new URL('../supabase/migrations/20261109000000_stage_board.sql', import.meta.url), 'utf8');
 
 const ALICE = '00000000-0000-4000-8000-000000000001';
 const BOB = '00000000-0000-4000-8000-000000000002';
@@ -59,6 +60,7 @@ beforeAll(async () => {
   `);
   await db.exec(MIGRATION);
   await db.exec(TERRITORY);
+  await db.exec(STAGE);
 }, 60_000);
 
 describe('leaderboard SQL', () => {
@@ -204,6 +206,46 @@ describe('territory leaderboard SQL', () => {
   it('blocks direct table access for client roles', async () => {
     await db.exec('set role authenticated');
     await expect(db.query('select * from public.territory_scores')).rejects.toThrow(/permission denied/);
+    await db.exec('reset role');
+  });
+});
+
+const stage = (uid: string | null, o: { name?: string; best: number; play: number; runs?: number }) =>
+  as(uid, `select public.submit_stage($1, $2, $3, $4)`, [o.name ?? 'tester', o.best, o.play, o.runs ?? 0]);
+
+const ageStage = (uid: string, seconds: number) =>
+  db.query(`update public.stage_scores set updated_at = now() - make_interval(secs => $2) where player_id = $1`, [uid, seconds]);
+
+describe('stage leaderboard SQL', () => {
+  it('rejects anonymous callers', async () => {
+    await expect(stage(null, { best: 1, play: 100 })).rejects.toThrow(/not authenticated/);
+  });
+
+  it('ranks players by the highest stage cleared', async () => {
+    await stage(ALICE, { name: '记仇的蚊子#0001', best: 3, play: 900, runs: 1 });
+    await stage(BOB, { name: '在逃的章鱼#0002', best: 7, play: 1800, runs: 2 });
+    const rows = await as<{ nickname: string; value: number; is_me: boolean }>(ALICE, 'select * from public.stage_best(10)');
+    expect(rows.map((r) => r.nickname)).toEqual(['在逃的章鱼#0002', '记仇的蚊子#0001']);
+    expect(rows[1]!.is_me).toBe(true);
+    expect(rows[0]!.value).toBe(7);
+  });
+
+  it('keeps the best stage and throttles updates', async () => {
+    await ageStage(BOB, 3600);
+    await stage(BOB, { best: 5, play: 2400, runs: 3 });
+    const [row] = (await db.query<{ best_stage: number }>(`select best_stage from public.stage_scores where player_id = $1`, [BOB])).rows;
+    expect(row!.best_stage).toBe(7);
+  });
+
+  it('refuses stages no play could reach and bad input', async () => {
+    await expect(stage(CAROL, { best: 20, play: 120 })).rejects.toThrow(/implausible score/);
+    await expect(stage(CAROL, { best: -1, play: 120 })).rejects.toThrow(/invalid score/);
+    await expect(stage(CAROL, { best: 1, play: -5 })).rejects.toThrow(/invalid progress/);
+  });
+
+  it('blocks direct table access for client roles', async () => {
+    await db.exec('set role authenticated');
+    await expect(db.query('select * from public.stage_scores')).rejects.toThrow(/permission denied/);
     await db.exec('reset role');
   });
 });
