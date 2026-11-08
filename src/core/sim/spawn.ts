@@ -1,14 +1,14 @@
 import { BUILDINGS } from '../config/buildings.ts';
 import { UNITS } from '../config/units.ts';
-import { LANE_Y, PADS, forward } from '../map/layout.ts';
-import type { Lane } from '../types.ts';
-import { addUnit, type Ctx } from './ctx.ts';
+import { cellAt } from '../map/grid.ts';
+import { addUnit, mainOf, navOf, type Ctx } from './ctx.ts';
 import { canFeed, humanFood, natureFood } from './economy.ts';
 import { spawnInterval } from './stats.ts';
 
 /** Construction, then births: each spawner waits its interval, then waits for food. */
 export function stepBuildings(ctx: Ctx, dt: number): void {
   const run = ctx.run;
+  const nav = navOf(run);
   let nf = natureFood(run, ctx.mods);
   let hf = humanFood(run);
   for (const b of run.buildings) {
@@ -35,15 +35,20 @@ export function stepBuildings(ctx: Ctx, dt: number): void {
     }
     b.blocked = null;
     b.timer = 0;
-    let lane: Lane;
-    if (b.pad >= 0) lane = PADS[b.pad]!.lane;
-    else {
-      lane = b.nextLane;
-      b.nextLane = ((b.nextLane + 1) % 3) as Lane;
+    // Step out of the door towards the enemy's main building.
+    const foe = mainOf(run, b.side === 'nature' ? 'human' : 'nature');
+    let x = b.x;
+    let y = b.y + 4;
+    if (foe) {
+      const d = Math.hypot(foe.x - b.x, foe.y - b.y) || 1;
+      const nx = b.x + ((foe.x - b.x) / d) * 12;
+      const ny = b.y + 4 + ((foe.y - b.y) / d) * 12;
+      if (nav.passable(cellAt(nx, ny))) {
+        x = nx;
+        y = ny;
+      }
     }
-    const fwd = forward(b.side);
-    const y = b.pad >= 0 ? b.y + 6 : LANE_Y[lane] === b.y ? b.y + 8 : b.y + (LANE_Y[lane] > b.y ? 20 : -20);
-    addUnit(ctx, kind, lane, b.x + fwd * 10, y);
+    addUnit(ctx, kind, b.id, x, y);
     // Births change the food lines for the rest of this step.
     nf = natureFood(run, ctx.mods);
     hf = humanFood(run);

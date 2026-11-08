@@ -1,7 +1,7 @@
 /**
  * A scripted nature player for balance runs (simulate.ts, report.ts). It plays the way the
- * design intends a sensible player to: feed the food chain first, keep a mixed army across
- * all three lanes, level what it fields, take forward pads when it holds the ground.
+ * design intends a sensible player to: feed the food chain first, keep a mixed army, level what
+ * it fields, and let the army find its own way (no rally flags).
  */
 import {
   BUILDINGS,
@@ -19,7 +19,7 @@ export type BotStyle = 'engaged' | 'casual' | 'idle' | 'naive';
 /** How often each style looks at the game, in seconds. */
 export const LOOK_EVERY: Record<BotStyle, number> = { engaged: 5, casual: 45, idle: 180, naive: 20 };
 
-/** The army the bot aims for: nests per kind (scaled up as pads allow). */
+/** The army the bot aims for: nests per kind (as far as there is room to build). */
 const PLAN: [NatureBuildingId, number][] = [
   ['anthill', 2],
   ['glade', 2],
@@ -42,8 +42,8 @@ function count(game: Game, kind: NatureBuildingId): number {
 }
 
 function tryBuild(game: Game, kind: NatureBuildingId): boolean {
-  const pad = game.autoPad(kind);
-  return pad !== null && game.build(pad, kind);
+  const cell = game.autoCell(kind);
+  return cell !== null && game.build(cell, kind);
 }
 
 /** One look at the game: spend what's sensible, pick, or start the next run. */

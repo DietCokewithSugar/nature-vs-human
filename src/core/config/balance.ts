@@ -11,26 +11,56 @@ export const BALANCE = {
 
   /** How often a unit looks for a new target, seconds. */
   retarget: 0.3,
-  /** How far units look for enemies in the field, px. */
-  aggro: 56,
+  /** How far units look for enemies, px (a cell is 32). */
+  aggro: 72,
   /** Seconds a unit must go without fighting before a charge is ready again. */
   quiet: 3,
 
   territory: {
-    /** Control runs −100 (human) … +100 (nature); past ±flip the stretch changes hands. */
+    /** Control runs −100 (human) … +100 (nature); past ±flip the cell changes hands. */
     flip: 50,
     max: 100,
-    /** Nature's home stretches and the humans' start owned; the middle starts neutral. */
-    startOwned: 2,
-    /** A stretch with a building of one side can't be pushed past neutral by the other. */
+    /** A cell with a building of one side can't be pushed past neutral by the other. */
     holdBuffer: 49,
+    /** A building pulls its own cell back to its side this fast (per second) while no enemy stands on it. */
+    buildingPull: 20,
+    /** Each new stage the humans retake this many cells round the capital (radius, in cells). */
+    capitalRadius: 2.5,
+  },
+
+  vision: {
+    /** Sight in cells: nature's buildings, its main building, and the ground it holds. */
+    building: 3,
+    main: 5,
+    ground: 1,
+  },
+
+  /** How nature's army picks where to go when there's nothing to fight. */
+  march: {
+    /** How far around itself a unit looks for ground to take, in cells. */
+    scan: 9,
+    /** Weight of being closer to the humans' capital (per cell of walking distance). */
+    capitalPull: 0.6,
+    /** Penalty per unit already heading for the same cell. */
+    crowd: 0.9,
+    /** Bonus for a cell with a human building nature has seen. */
+    building: 4,
+    /** Seconds between reconsidering the goal. */
+    rethink: 3,
+  },
+
+  flags: {
+    /** Rally flags at most; a new one replaces the oldest. */
+    max: 3,
+    /** Units within this many cells of their flag take ground round it. */
+    radius: 4,
   },
 
   nature: {
     start: 200,
-    /** 生机 per second for each stretch held, and the extra a hot spring pays. */
-    perSegment: 0.25,
-    spring: 1,
+    /** 生机 per second for each cell held, and for each resource site held. */
+    perCell: 0.02,
+    site: 0.8,
     /** Food stock buffer: this many seconds of production, at least `minStock`. */
     stockSeconds: 20,
     minStock: 10,
@@ -41,8 +71,8 @@ export const BALANCE = {
   human: {
     start: 40,
     startPerStage: 60,
-    perSegment: 0.3,
-    spring: 1,
+    perCell: 0.004,
+    site: 0.8,
     /** Supplies a gatherer brings in per second while working the front. */
     gather: 0.2,
     /** Lodge income grows each stage. */

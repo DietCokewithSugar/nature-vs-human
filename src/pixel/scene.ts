@@ -1,24 +1,28 @@
-import { Application, Assets, Container, Graphics, Sprite, Text, Texture, TextureSource } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Text, Texture, TextureSource } from 'pixi.js';
 import {
-  FIELD_X0,
-  LANE_HALF,
-  LANE_Y,
-  MAP_H,
-  MAP_W,
-  PADS,
-  SEGMENTS,
-  SEG_W,
-  SPRINGS,
+  BUILDINGS,
+  CELL,
+  MAP_PX,
   UNITS,
-  buildingOnPad,
-  padUser,
+  buildingSpot,
+  cellAt,
+  cxOf,
+  cyOf,
+  eraBounds,
+  footprintOf,
+  isMain,
+  mapOf,
+  mainOf,
   type Building,
   type CoreEvent,
   type Game,
+  type NatureBuildingId,
   type Unit,
   type UnitId,
 } from '../core/index.ts';
 import { loadAtlas, tex } from './atlas.ts';
+import { Fog } from './fog.ts';
+import { Ground } from './ground.ts';
 import { C, numOf } from './palette.ts';
 
 export interface Insets {
@@ -28,14 +32,24 @@ export interface Insets {
   left: number;
 }
 
-/** What a tap on the map hit. */
-export type MapTarget = { type: 'pad'; pad: number } | { type: 'building'; id: number } | { type: 'unit'; id: number } | { type: 'none' };
+/** What a click on the map hit. */
+export type MapTarget =
+  | { type: 'cell'; cell: number }
+  | { type: 'building'; id: number }
+  | { type: 'unit'; id: number }
+  | { type: 'flag'; id: number }
+  | { type: 'none' };
 
 const TEAM = {
   nature: { bar: numOf(C.mint), dark: numOf(C.teal) },
   human: { bar: numOf(C.vermilion), dark: numOf(C.blood) },
 };
 const RING_SIZES = [8, 12, 16, 20, 26, 34];
+/** Seen-but-not-visible buildings of the humans are drawn greyed, as last seen. */
+const GHOST_TINT = 0x8a8aa0;
+/** Keyboard and edge scrolling speed, CSS px per second. */
+const PAN_SPEED = 900;
+const EDGE = 14;
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 interface UnitView {
@@ -86,9 +100,10 @@ interface Float {
 }
 
 /**
- * The battlefield in PixiJS: one baked background, the territory overlays, the build pads,
- * buildings and units sorted by depth, projectiles and effects. It only reads the game state
- * and reports taps; it never changes the game.
+ * The battlefield in PixiJS: the baked ground, resource sites, buildings and units sorted by
+ * depth, projectiles and effects, then the fog of war over all of it, then rally flags and
+ * health bars. A camera pans and zooms over the map (keys, screen edges, dragging, the wheel).
+ * It only reads the game state and reports clicks; it never changes the game.
  */
 export class Scene {
   private app = new Application();
@@ -98,37 +113,48 @@ export class Scene {
   private insets: Insets = { top: 0, right: 0, bottom: 0, left: 0 };
 
   private world = new Container();
-  private ground = new Container();
-  private terrain: Sprite[][][] = [];
-  private padLayer = new Container();
-  private padViews: { sprite: Sprite; mark: Graphics }[] = [];
+  private ground: Ground | null = null;
+  private fog = new Fog();
+  private siteLayer = new Container();
+  private cellG = new Graphics();
   private rings = new Container();
   private objects = new Container();
   private shots = new Container();
   private fxLayer = new Container();
+  private flagLayer = new Container();
   private bars = new Container();
   private screen = new Container();
   private selectG = new Graphics();
+  private ghost = new Sprite(Texture.EMPTY);
 
   private units = new Map<number, UnitView>();
   private buildings = new Map<number, BuildingView>();
+  private sites: { sprite: Sprite; cell: number; ring: Graphics }[] = [];
+  private siteSeed = -1;
+  private flags = new Map<number, Sprite>();
   private projSprites: Sprite[] = [];
   private fx: Fx[] = [];
   private floats: Float[] = [];
   private steamT = 0;
   private clock = 0;
 
-  /** Zoom in device px per map px, and the pan offset in map px. */
+  /** Zoom in device px per map px; the camera centre in map px. */
   private zoom = 2;
-  private userZoom = 0;
-  private panX = 0;
-  private panY = 0;
+  private baseZoom = 2;
+  private camX = MAP_PX / 2;
+  private camY = MAP_PX / 2;
+  private keys = new Set<string>();
+  private pointer = { x: 0, y: 0, over: false };
+
   private buildable = new Set<number>();
-  private highlightPads = false;
+  private placing: NatureBuildingId | null = null;
+  private hoverCell = -1;
   private selected: number | null = null;
-  private selectedPad: number | null = null;
+  private selectedCell: number | null = null;
 
   onTap: (t: MapTarget) => void = () => {};
+  /** Right click: map px. */
+  onRightTap: (x: number, y: number) => void = () => {};
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -149,44 +175,35 @@ export class Scene {
       autoDensity: true,
       antialias: false,
       roundPixels: true,
-      background: C.pine,
+      background: C.ink,
       preference: 'webgl',
     });
     await loadAtlas();
-    const mapTex = await Assets.load<Texture>(`${import.meta.env.BASE_URL}sprites/map.png`);
-    mapTex.source.scaleMode = 'nearest';
-    this.ground.addChild(new Sprite(mapTex));
-    // Territory overlays, one per side per stretch; their alpha follows control.
-    for (const side of ['nature', 'human'] as const) {
-      const bySide: Sprite[][] = [];
-      for (let lane = 0; lane < 3; lane++) {
-        const row: Sprite[] = [];
-        for (let seg = 0; seg < SEGMENTS; seg++) {
-          const s = new Sprite(tex(`terrain/${side}/${lane}-${seg}`));
-          s.anchor.set(0, 0);
-          s.position.set(Math.round(FIELD_X0 + SEG_W * seg - 4), LANE_Y[lane]! - LANE_HALF - 2);
-          s.alpha = 0;
-          this.ground.addChild(s);
-          row.push(s);
-        }
-        bySide.push(row);
-      }
-      this.terrain.push(bySide);
-    }
-    for (const pad of PADS) {
-      const sprite = new Sprite(tex(`pad/${pad.home ?? 'field'}`));
-      sprite.position.set(pad.x, pad.y);
-      const mark = new Graphics();
-      mark.position.set(pad.x, pad.y);
-      this.padLayer.addChild(sprite, mark);
-      this.padViews.push({ sprite, mark });
-    }
+    this.ground = new Ground(this.app.renderer);
     this.objects.sortableChildren = true;
-    this.world.addChild(this.ground, this.padLayer, this.selectG, this.rings, this.objects, this.shots, this.fxLayer, this.bars);
+    this.ghost.alpha = 0.6;
+    this.ghost.visible = false;
+    this.world.addChild(
+      this.ground.layer,
+      this.siteLayer,
+      this.cellG,
+      this.rings,
+      this.objects,
+      this.ghost,
+      this.shots,
+      this.fxLayer,
+      this.fog.sprite,
+      this.fog.border,
+      this.selectG,
+      this.flagLayer,
+      this.bars,
+    );
     this.app.stage.addChild(this.world, this.screen);
     this.bindPointer();
+    this.bindKeys();
     this.ready = true;
     this.resize();
+    if (this.game) this.home();
     this.app.ticker.add((t) => this.frame(t.deltaMS / 1000));
   }
 
@@ -200,6 +217,13 @@ export class Scene {
   resize(): void {
     if (!this.ready) return;
     this.app.renderer.resize(window.innerWidth, window.innerHeight, this.res);
+    const v = this.view();
+    // About fifteen cells top to bottom at the default zoom.
+    const base = Math.max(1, Math.round((v.h * this.res) / (15 * CELL)));
+    if (base !== this.baseZoom) {
+      this.zoom = clamp(this.zoom + base - this.baseZoom, 1, base + 2);
+      this.baseZoom = base;
+    }
     this.layout();
   }
 
@@ -211,29 +235,59 @@ export class Scene {
     return { x: i.left, y: i.top, w: Math.max(1, w - i.left - i.right), h: Math.max(1, h - i.top - i.bottom) };
   }
 
-  /** Whole device pixels per map pixel that fit the map (borders may tuck under the UI). */
-  private fitZoom(): number {
-    const v = this.view();
-    const k = Math.floor(Math.min((v.w * this.res) / (MAP_W - 24), (v.h * this.res) / (MAP_H - 28)));
-    return Math.max(1, k);
+  private get scaleCss(): number {
+    return this.zoom / this.res;
   }
 
   private layout(): void {
-    const fit = this.fitZoom();
-    this.zoom = clamp(fit + this.userZoom, Math.max(1, fit - 1), fit + 3);
-    const s = this.zoom / this.res;
+    const s = this.scaleCss;
     const v = this.view();
-    const mw = MAP_W * s;
-    const mh = MAP_H * s;
-    // Centre the map in the free rect; when it's bigger than the rect, allow panning.
-    const maxPanX = Math.max(0, (mw - v.w) / 2 / s);
-    const maxPanY = Math.max(0, (mh - v.h) / 2 / s);
-    this.panX = clamp(this.panX, -maxPanX, maxPanX);
-    this.panY = clamp(this.panY, -maxPanY, maxPanY);
-    const x = v.x + (v.w - mw) / 2 - this.panX * s;
-    const y = v.y + (v.h - mh) / 2 - this.panY * s;
+    // Keep the camera over the open map (with a little of the closed ring showing).
+    const era = this.game?.run.era ?? 0;
+    const [a, b] = eraBounds(era);
+    const lo = (a - 3) * CELL;
+    const hi = (b + 4) * CELL;
+    const halfW = v.w / 2 / s;
+    const halfH = v.h / 2 / s;
+    this.camX = hi - lo <= halfW * 2 ? (lo + hi) / 2 : clamp(this.camX, lo + halfW, hi - halfW);
+    this.camY = hi - lo <= halfH * 2 ? (lo + hi) / 2 : clamp(this.camY, lo + halfH, hi - halfH);
+    const x = v.x + v.w / 2 - this.camX * s;
+    const y = v.y + v.h / 2 - this.camY * s;
     this.world.scale.set(s);
     this.world.position.set(Math.round(x * this.res) / this.res, Math.round(y * this.res) / this.res);
+  }
+
+  /** The part of the map on screen, in map px. */
+  viewRect(): { x0: number; y0: number; x1: number; y1: number } {
+    const s = this.scaleCss;
+    const v = this.view();
+    return { x0: this.camX - v.w / 2 / s, y0: this.camY - v.h / 2 / s, x1: this.camX + v.w / 2 / s, y1: this.camY + v.h / 2 / s };
+  }
+
+  centerOn(x: number, y: number): void {
+    this.camX = x;
+    this.camY = y;
+    this.layout();
+  }
+
+  /** Back to the mother tree. */
+  home(): void {
+    const tree = this.game ? mainOf(this.game.run, 'nature') : undefined;
+    if (tree) this.centerOn(tree.x, tree.y - CELL);
+  }
+
+  zoomBy(step: number, atX?: number, atY?: number): void {
+    const before = this.zoom;
+    this.zoom = clamp(this.zoom + step, 1, this.baseZoom + 2);
+    if (this.zoom === before) return;
+    if (atX !== undefined && atY !== undefined) {
+      // Keep the map point under the cursor where it is.
+      const p = this.toMap(atX, atY);
+      const k = before / this.zoom;
+      this.camX = p.x + (this.camX - p.x) * k;
+      this.camY = p.y + (this.camY - p.y) * k;
+    }
+    this.layout();
   }
 
   private toMap(clientX: number, clientY: number): { x: number; y: number } {
@@ -250,57 +304,112 @@ export class Scene {
 
   private bindPointer(): void {
     const c = this.canvas;
-    let down: { x: number; y: number; px: number; py: number; moved: boolean } | null = null;
+    let down: { x: number; y: number; cx: number; cy: number; moved: boolean; button: number } | null = null;
+    c.addEventListener('contextmenu', (e) => e.preventDefault());
     c.addEventListener('pointerdown', (e) => {
-      down = { x: e.clientX, y: e.clientY, px: this.panX, py: this.panY, moved: false };
+      if (e.button === 2) {
+        const p = this.toMap(e.clientX, e.clientY);
+        this.onRightTap(p.x, p.y);
+        return;
+      }
+      down = { x: e.clientX, y: e.clientY, cx: this.camX, cy: this.camY, moved: false, button: e.button };
+      c.setPointerCapture(e.pointerId);
     });
     c.addEventListener('pointermove', (e) => {
+      const p = this.toMap(e.clientX, e.clientY);
+      this.hoverCell = cellAt(p.x, p.y);
       if (!down) return;
       const dx = e.clientX - down.x;
       const dy = e.clientY - down.y;
-      if (!down.moved && Math.hypot(dx, dy) < 8) return;
+      if (!down.moved && Math.hypot(dx, dy) < 8 && down.button === 0) return;
       down.moved = true;
       const s = this.world.scale.x;
-      this.panX = down.px - dx / s;
-      this.panY = down.py - dy / s;
+      this.camX = down.cx - dx / s;
+      this.camY = down.cy - dy / s;
       this.layout();
     });
     c.addEventListener('pointerup', (e) => {
       const d = down;
       down = null;
-      if (!d || d.moved) return;
+      if (!d || d.moved || d.button !== 0) return;
       const p = this.toMap(e.clientX, e.clientY);
       this.onTap(this.hitTest(p.x, p.y));
     });
     c.addEventListener('pointercancel', () => (down = null));
+    c.addEventListener('pointerleave', () => (this.hoverCell = -1));
     c.addEventListener(
       'wheel',
       (e) => {
         e.preventDefault();
-        this.userZoom = clamp(this.userZoom + (e.deltaY < 0 ? 1 : -1), -1, 3);
-        this.layout();
+        this.zoomBy(e.deltaY < 0 ? 1 : -1, e.clientX, e.clientY);
       },
       { passive: false },
     );
+    // Edge scrolling follows the pointer over the map only (not over the panels).
+    window.addEventListener('pointermove', (e) => {
+      this.pointer = { x: e.clientX, y: e.clientY, over: e.target === c };
+    });
+    document.addEventListener('pointerleave', () => (this.pointer.over = false));
+    window.addEventListener('blur', () => {
+      this.pointer.over = false;
+      this.keys.clear();
+    });
   }
 
-  /** Back to the whole map. */
-  recenter(): void {
-    this.userZoom = 0;
-    this.panX = 0;
-    this.panY = 0;
+  private bindKeys(): void {
+    const PAN = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright']);
+    window.addEventListener('keydown', (e) => {
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if (PAN.has(k) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        this.keys.add(k);
+        e.preventDefault();
+      } else if (k === '+' || k === '=') this.zoomBy(1);
+      else if (k === '-' || k === '_') this.zoomBy(-1);
+    });
+    window.addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+  }
+
+  private pan(dt: number): void {
+    let dx = 0;
+    let dy = 0;
+    const k = this.keys;
+    if (k.has('a') || k.has('arrowleft')) dx -= 1;
+    if (k.has('d') || k.has('arrowright')) dx += 1;
+    if (k.has('w') || k.has('arrowup')) dy -= 1;
+    if (k.has('s') || k.has('arrowdown')) dy += 1;
+    if (this.pointer.over && document.hasFocus()) {
+      const v = this.view();
+      const { x, y } = this.pointer;
+      if (x >= v.x && x < v.x + EDGE) dx -= 1;
+      if (x <= v.x + v.w && x > v.x + v.w - EDGE) dx += 1;
+      if (y >= v.y && y < v.y + EDGE) dy -= 1;
+      if (y <= v.y + v.h && y > v.y + v.h - EDGE) dy += 1;
+    }
+    if (!dx && !dy) return;
+    const step = (PAN_SPEED * dt) / this.scaleCss;
+    this.camX += clamp(dx, -1, 1) * step;
+    this.camY += clamp(dy, -1, 1) * step;
     this.layout();
+  }
+
+  private visibleAt(x: number, y: number): boolean {
+    const g = this.game;
+    if (!g) return false;
+    const c = cellAt(x, y);
+    return c >= 0 && g.visible[c] === 1;
   }
 
   private hitTest(x: number, y: number): MapTarget {
     const game = this.game;
     if (!game) return { type: 'none' };
-    // Buildings first (they're big), nearest anchor whose box contains the point.
+    for (const f of game.run.flags) if (Math.abs(x - f.x - 4) <= 8 && y <= f.y + 2 && y >= f.y - 24) return { type: 'flag', id: f.id };
     let best: MapTarget = { type: 'none' };
     let bestD = Infinity;
     for (const b of game.run.buildings) {
       const v = this.buildings.get(b.id);
-      if (!v) continue;
+      if (!v || !v.root.visible) continue;
       const bw = v.body.width / 2 + 2;
       const top = v.body.height * v.body.anchor.y + 2;
       if (x >= b.x - bw && x <= b.x + bw && y >= b.y - top && y <= b.y + 6) {
@@ -312,35 +421,36 @@ export class Scene {
       }
     }
     if (best.type !== 'none') return best;
-    for (const pad of PADS) {
-      if (Math.abs(x - pad.x) <= 17 && Math.abs(y - pad.y) <= 12 && !buildingOnPad(game.run, pad.id)) return { type: 'pad', pad: pad.id };
-    }
     for (const u of game.run.units) {
+      if (u.side === 'human' && !this.visibleAt(u.x, u.y)) continue;
       if (Math.abs(x - u.x) <= UNITS[u.kind].r + 3 && y <= u.y + 3 && y >= u.y - UNITS[u.kind].r * 2 - 6) return { type: 'unit', id: u.id };
     }
-    return { type: 'none' };
+    const cell = cellAt(x, y);
+    return cell >= 0 ? { type: 'cell', cell } : { type: 'none' };
   }
 
   // ── Modes ────────────────────────────────────────────────────
 
-  /** Pads nature can build on; highlighted strongly while the build menu is open. */
-  setBuildable(pads: number[], strong: boolean): void {
-    this.buildable = new Set(pads);
-    this.highlightPads = strong;
+  /** Cells nature can build on, and the kind being placed (if any). */
+  setBuildable(cells: number[], placing: NatureBuildingId | null): void {
+    this.buildable = new Set(cells);
+    this.placing = placing;
   }
 
   select(id: number | null): void {
     this.selected = id;
   }
 
-  selectPad(pad: number | null): void {
-    this.selectedPad = pad;
+  selectCell(cell: number | null): void {
+    this.selectedCell = cell;
   }
 
   // ── Sync with the game ───────────────────────────────────────
 
   sync(game: Game): void {
+    const first = !this.game;
     this.game = game;
+    if (first && this.ready) this.home();
   }
 
   reset(): void {
@@ -363,58 +473,112 @@ export class Scene {
     const game = this.game;
     if (!game || !this.ready) return;
     this.clock += dt;
+    this.pan(Math.min(dt, 0.05));
     const run = game.run;
-    // Territory.
-    for (let lane = 0; lane < 3; lane++) {
-      for (let seg = 0; seg < SEGMENTS; seg++) {
-        const c = run.segments[lane]![seg]!;
-        const n = this.terrain[0]![lane]![seg]!;
-        const h = this.terrain[1]![lane]![seg]!;
-        const na = clamp((c - 12) / 50, 0, 1);
-        const ha = clamp((-c - 12) / 50, 0, 1);
-        n.alpha += (na - n.alpha) * Math.min(1, dt * 3);
-        h.alpha += (ha - h.alpha) * Math.min(1, dt * 3);
-      }
-    }
-    this.syncPads(game);
+    const map = mapOf(run);
+    this.ground!.update(map, run.era, run.control, this.viewRect());
+    this.fog.update(run.explored, game.visible, map.ring, run.era);
+    this.syncSites(game);
     this.syncBuildings(game, dt);
     this.syncUnits(game, dt);
     this.syncProjectiles(game);
+    this.syncFlags(game);
     this.stepFx(dt);
     this.steam(dt);
+    this.drawCells(game);
     this.drawSelection();
   }
 
-  private syncPads(game: Game): void {
-    const pulse = 0.8 + 0.2 * Math.sin(this.clock * 5);
-    for (const pad of PADS) {
-      const v = this.padViews[pad.id]!;
-      const taken = !!buildingOnPad(game.run, pad.id);
-      v.sprite.visible = !taken;
-      v.mark.clear();
-      if (taken) continue;
-      const user = padUser(game.run, pad.id);
-      // Field pads show who may build there by tint.
-      if (!pad.home) v.sprite.alpha = user === null ? 0.55 : 1;
-      const chosen = this.selectedPad === pad.id;
-      if (this.buildable.has(pad.id) || chosen) {
-        const col = numOf(chosen ? C.gold : this.highlightPads ? C.mint : C.aqua);
-        const a = chosen ? 1 : this.highlightPads ? pulse : 0.35 + 0.25 * pulse;
-        // Corner brackets and a plus: "you can build here".
-        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
-          v.mark.rect(sx * 16 - (sx > 0 ? 3 : 0), sy * 10 - (sy > 0 ? 1 : 0), 4, 1).fill({ color: col, alpha: a });
-          v.mark.rect(sx * 16 - (sx > 0 ? 1 : 0), sy * 10 - (sy > 0 ? 3 : 0), 1, 4).fill({ color: col, alpha: a });
-        }
-        v.mark.rect(-2, 0, 5, 1).fill({ color: col, alpha: a });
-        v.mark.rect(0, -2, 1, 5).fill({ color: col, alpha: a });
+  private syncSites(game: Game): void {
+    const run = game.run;
+    const map = mapOf(run);
+    if (this.siteSeed !== map.seed) {
+      this.siteSeed = map.seed;
+      for (const s of this.sites) {
+        s.sprite.destroy();
+        s.ring.destroy();
       }
+      this.sites = map.sites.map((site) => {
+        const ring = new Graphics();
+        const sprite = new Sprite(tex(`site/${site.kind}`));
+        sprite.position.set(cxOf(site.cell) * CELL + CELL / 2, cyOf(site.cell) * CELL + CELL - 8);
+        this.siteLayer.addChild(ring, sprite);
+        return { sprite, ring, cell: site.cell };
+      });
+    }
+    for (const s of this.sites) {
+      const shown = run.explored[s.cell] === 1 && map.ring[s.cell]! <= run.era;
+      s.sprite.visible = shown;
+      s.ring.visible = shown;
+      if (!shown) continue;
+      const c = run.control[s.cell]!;
+      s.ring.clear();
+      if (Math.abs(c) < 50) continue;
+      const x = cxOf(s.cell) * CELL + CELL / 2;
+      const y = cyOf(s.cell) * CELL + CELL - 10;
+      s.ring.ellipse(x, y, 14, 6).stroke({ color: c > 0 ? TEAM.nature.bar : TEAM.human.bar, width: 1, alpha: 0.6 + 0.3 * Math.sin(this.clock * 3) });
+    }
+  }
+
+  /** Build highlights, the selected cell and the ghost of the building being placed. */
+  private drawCells(game: Game): void {
+    const g = this.cellG;
+    g.clear();
+    const pulse = 0.55 + 0.25 * Math.sin(this.clock * 5);
+    const r = this.viewRect();
+    if (this.placing) {
+      for (const c of this.buildable) {
+        const x = cxOf(c) * CELL;
+        const y = cyOf(c) * CELL;
+        if (x + CELL < r.x0 || x > r.x1 || y + CELL < r.y0 || y > r.y1) continue;
+        g.rect(x + 2, y + 2, CELL - 4, CELL - 4)
+          .fill({ color: 0xffffff, alpha: 0.1 + 0.08 * pulse })
+          .stroke({ color: numOf(C.foam), width: 1, alpha: 0.5 + 0.4 * pulse });
+      }
+    }
+    if (this.selectedCell !== null) {
+      const x = cxOf(this.selectedCell) * CELL;
+      const y = cyOf(this.selectedCell) * CELL;
+      g.rect(x + 1, y + 1, CELL - 2, CELL - 2).stroke({ color: numOf(C.gold), width: 1, alpha: 0.6 + 0.4 * Math.sin(this.clock * 6) });
+    }
+    const kind = this.placing;
+    if (kind && this.hoverCell >= 0) {
+      const ok = game.buildCheck(this.hoverCell, kind);
+      const n = footprintOf(kind);
+      const col = numOf(ok.ok || (!ok.ok && ok.why === 'money') ? C.mint : C.red);
+      g.rect(cxOf(this.hoverCell) * CELL, cyOf(this.hoverCell) * CELL, CELL * n, CELL * n).fill({ color: col, alpha: 0.18 }).stroke({ color: col, width: 1, alpha: 0.9 });
+      const spot = buildingSpot(kind, this.hoverCell);
+      this.ghost.texture = tex(`building/${kind}`);
+      this.ghost.position.set(spot.x, spot.y);
+      this.ghost.tint = ok.ok ? 0xffffff : 0xff8080;
+      this.ghost.visible = true;
+    } else this.ghost.visible = false;
+  }
+
+  private syncFlags(game: Game): void {
+    const seen = new Set<number>();
+    for (const f of game.run.flags) {
+      seen.add(f.id);
+      let s = this.flags.get(f.id);
+      if (!s) {
+        s = new Sprite(tex('flag/0'));
+        this.flagLayer.addChild(s);
+        this.flags.set(f.id, s);
+      }
+      s.position.set(f.x, f.y + 6);
+      s.texture = tex(`flag/${Math.floor(this.clock * 3 + f.id) % 2}`);
+    }
+    for (const [id, s] of this.flags) {
+      if (seen.has(id)) continue;
+      s.destroy();
+      this.flags.delete(id);
     }
   }
 
   private makeBuilding(b: Building): BuildingView {
     const root = new Container();
-    const plate = new Sprite(tex(`pad/${b.pad < 0 ? (b.side === 'nature' ? 'nature' : 'human') : b.side}`));
-    plate.alpha = b.pad < 0 ? 0 : 1;
+    const plate = new Sprite(tex(`pad/${b.side}`));
+    plate.alpha = isMain(b) ? 0 : 1;
     const body = new Sprite(tex(`building/${b.kind}`));
     const bar = new Graphics();
     const blocked = new Sprite(Texture.EMPTY);
@@ -435,10 +599,16 @@ export class Scene {
         this.buildings.set(b.id, v);
       }
       v.seen = true;
+      // The humans' buildings: shown where nature sees; greyed as last seen under the fog.
+      const live = b.side === 'nature' || this.visibleAt(b.x, b.y - 4) || (BUILDINGS[b.kind].main === true && this.visibleAt(b.x, b.y - CELL));
+      const ghost = !live && b.seen;
+      v.root.visible = live || ghost;
+      v.bar.visible = live;
+      if (!v.root.visible) continue;
       if (b.hp < v.lastHp - 0.5) v.shake = Math.min(1, v.shake + 0.25);
       v.lastHp = b.hp;
       v.shake = Math.max(0, v.shake - dt * 3);
-      const jx = v.shake > 0 ? Math.round(Math.sin(this.clock * 60) * v.shake * 1.5) : 0;
+      const jx = v.shake > 0 && live ? Math.round(Math.sin(this.clock * 60) * v.shake * 1.5) : 0;
       v.root.position.set(b.x + jx, b.y);
       v.root.zIndex = b.y;
       const building = b.progress < 1;
@@ -450,11 +620,11 @@ export class Scene {
         v.scaffold.destroy();
         v.scaffold = null;
       }
-      // Hit flash.
-      v.body.tint = time - b.hitAt < 0.06 ? 0xffd6d6 : 0xffffff;
+      v.body.tint = ghost ? GHOST_TINT : time - b.hitAt < 0.06 ? 0xffd6d6 : 0xffffff;
+      v.plate.tint = ghost ? GHOST_TINT : 0xffffff;
       // Fire when badly hurt.
       const share = b.hp / b.maxHp;
-      const want = b.progress >= 1 ? (share < 0.25 ? 2 : share < 0.5 ? 1 : 0) : 0;
+      const want = b.progress >= 1 && live ? (share < 0.25 ? 2 : share < 0.5 ? 1 : 0) : 0;
       while (v.flames.length < want) {
         const f = new Sprite(tex('fx/flame0'));
         const k = v.flames.length;
@@ -464,7 +634,7 @@ export class Scene {
       }
       while (v.flames.length > want) v.flames.pop()!.destroy();
       v.flames.forEach((f, i) => (f.texture = tex(`fx/flame${Math.floor(this.clock * 8 + i) % 3}`)));
-      if (share < 0.6 && b.progress >= 1 && Math.random() < dt * 2.5) {
+      if (live && share < 0.6 && b.progress >= 1 && Math.random() < dt * 2.5) {
         this.spawnFx('smoke', 3, b.x + (Math.random() * 16 - 8), b.y - v.body.height * 0.6, 1.1, 0, -9, true);
       }
       // Waiting for food: show what's missing above the building.
@@ -473,7 +643,7 @@ export class Scene {
         v.blocked.position.set(0, -Math.round(v.body.height * v.body.anchor.y) - 2 - (Math.floor(this.clock * 3) % 2));
         v.blocked.visible = true;
       } else v.blocked.visible = false;
-      this.drawBuildingBar(v, b);
+      if (live) this.drawBuildingBar(v, b);
     }
     for (const [id, v] of this.buildings) {
       if (v.seen) continue;
@@ -486,7 +656,7 @@ export class Scene {
   private drawBuildingBar(v: BuildingView, b: Building): void {
     const g = v.bar;
     g.clear();
-    const main = b.pad < 0;
+    const main = isMain(b);
     const building = b.progress < 1;
     if (!main && !building && b.hp >= b.maxHp - 0.5) return;
     const w = main ? 40 : 22;
@@ -527,6 +697,7 @@ export class Scene {
     for (const v of this.units.values()) v.seen = false;
     const time = game.run.time;
     const k = Math.min(1, dt * 14);
+    const r = this.viewRect();
     for (const u of game.run.units) {
       let v = this.units.get(u.id);
       if (!v) {
@@ -540,6 +711,11 @@ export class Scene {
       v.travel += moved;
       v.x = nx;
       v.y = ny;
+      const shown = (u.side === 'nature' || this.visibleAt(u.x, u.y)) && nx > r.x0 - 40 && nx < r.x1 + 40 && ny > r.y0 - 40 && ny < r.y1 + 60;
+      v.root.visible = shown;
+      v.ring.visible = shown;
+      v.bar.visible = shown;
+      if (!shown) continue;
       const rx = Math.round(nx);
       const ry = Math.round(ny);
       v.root.position.set(rx, ry);
@@ -586,7 +762,7 @@ export class Scene {
     }
     this.projSprites.forEach((s, i) => {
       const p = ps[i];
-      if (!p) {
+      if (!p || !this.visibleAt(p.x, p.y)) {
         s.visible = false;
         return;
       }
@@ -611,7 +787,7 @@ export class Scene {
   // ── Effects ─────────────────────────────────────────────────
 
   private spawnFx(name: string, n: number, x: number, y: number, dur: number, vx = 0, vy = 0, fade = false): void {
-    if (this.fx.length > 140) return;
+    if (this.fx.length > 160) return;
     const frames = Array.from({ length: n }, (_, i) => tex(`fx/${name}${i}`));
     const sprite = new Sprite(frames[0]);
     sprite.position.set(Math.round(x), Math.round(y));
@@ -650,13 +826,27 @@ export class Scene {
     this.floats = fl;
   }
 
+  /** Smoke from the volcano cones and the steam vents nature has seen. */
   private steam(dt: number): void {
     this.steamT += dt;
-    if (this.steamT < 0.45) return;
+    if (this.steamT < 0.5 || !this.game) return;
     this.steamT = 0;
-    for (const sp of SPRINGS) {
-      const y = LANE_Y[sp.lane]! + (sp.lane === 0 ? -24 : 24);
-      this.spawnFx('smoke', 3, 288 + (Math.random() * 20 - 10), y - 2, 1.6, Math.random() * 4 - 2, -10, true);
+    const run = this.game.run;
+    const map = mapOf(run);
+    const r = this.viewRect();
+    for (const v of map.volcanoes) {
+      if (!run.explored[v] || map.ring[v]! > run.era) continue;
+      const x = cxOf(v) * CELL + CELL / 2;
+      const y = cyOf(v) * CELL + CELL - 52;
+      if (x < r.x0 - 40 || x > r.x1 + 40 || y < r.y0 - 40 || y > r.y1 + 80) continue;
+      this.spawnFx('smoke', 3, x + (Math.random() * 10 - 5), y, 2, Math.random() * 4 - 2, -12, true);
+    }
+    for (const s of map.sites) {
+      if (s.kind !== 'vent' || !run.explored[s.cell] || map.ring[s.cell]! > run.era) continue;
+      const x = cxOf(s.cell) * CELL + CELL / 2;
+      const y = cyOf(s.cell) * CELL + CELL - 14;
+      if (x < r.x0 || x > r.x1 || y < r.y0 || y > r.y1 + 20) continue;
+      if (Math.random() < 0.6) this.spawnFx('smoke', 3, x, y, 1.4, 0, -10, true);
     }
   }
 
@@ -666,7 +856,7 @@ export class Scene {
     if (this.selected === null) return;
     const v = this.buildings.get(this.selected);
     const b = this.game?.run.buildings.find((x) => x.id === this.selected);
-    if (!v || !b) return;
+    if (!v || !b || !v.root.visible) return;
     const w = Math.round(v.body.width / 2) + 3;
     const a = 0.6 + 0.4 * Math.sin(this.clock * 6);
     const col = TEAM[b.side].bar;
@@ -689,15 +879,16 @@ export class Scene {
     if (!this.ready) return;
     switch (e.type) {
       case 'hit':
-        if (Math.random() < 0.6) this.spawnFx('hit', 3, e.x + (Math.random() * 6 - 3), e.y - 6 - Math.random() * 4, 0.18);
+        if (this.visibleAt(e.x, e.y) && Math.random() < 0.6) this.spawnFx('hit', 3, e.x + (Math.random() * 6 - 3), e.y - 6 - Math.random() * 4, 0.18);
         break;
       case 'impact':
-        if (e.kind === 'fire') this.spawnFx('flame', 3, e.x, e.y + 4, 0.35);
+        if (e.kind === 'fire' && this.visibleAt(e.x, e.y)) this.spawnFx('flame', 3, e.x, e.y + 4, 0.35);
         break;
       case 'death':
-        this.spawnFx('poof', 4, e.x, e.y - 3, e.cause === 'rout' ? 0.5 : 0.42);
+        if (e.side === 'nature' || this.visibleAt(e.x, e.y)) this.spawnFx('poof', 4, e.x, e.y - 3, e.cause === 'rout' ? 0.5 : 0.42);
         break;
       case 'destroyed':
+        if (e.side === 'human' && !this.visibleAt(e.x, e.y)) break;
         this.spawnFx('rubble', 3, e.x, e.y, 0.8);
         for (let i = 0; i < 6; i++) this.spawnFx('smoke', 3, e.x + (Math.random() * 30 - 15), e.y - 6 - Math.random() * 14, 1.2, Math.random() * 8 - 4, -14, true);
         break;
@@ -705,7 +896,10 @@ export class Scene {
         if (e.amount >= 1) this.float(e.x, e.y - 14, `+${Math.round(e.amount)}`, C.mint);
         break;
       case 'placed':
-        this.spawnFx('smoke', 3, PADS[e.pad]!.x, PADS[e.pad]!.y - 4, 0.6, 0, -6, true);
+        if (e.side === 'nature' || this.visibleAt(e.x, e.y)) this.spawnFx('smoke', 3, e.x, e.y - 4, 0.6, 0, -6, true);
+        break;
+      case 'stageStarted':
+        if (e.opened) this.layout();
         break;
       default:
         break;
@@ -722,9 +916,8 @@ export class Scene {
     return { x: p.x, y: p.y, top: top.y };
   }
 
-  padScreen(pad: number): { x: number; y: number } {
-    const p = PADS[pad]!;
-    return this.toScreen(p.x, p.y - 10);
+  cellScreen(cell: number): { x: number; y: number } {
+    return this.toScreen(cxOf(cell) * CELL + CELL / 2, cyOf(cell) * CELL);
   }
 
   /** Map px per CSS px at the current zoom. */
@@ -732,3 +925,4 @@ export class Scene {
     return this.world.scale.x;
   }
 }
+

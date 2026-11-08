@@ -4,16 +4,17 @@ import {
   BUILDINGS,
   HERBIVORES,
   LEVEL_IDS,
-  PADS,
   PREDATORS,
   UNITS,
+  cellOwner,
   humanLevel,
+  isMain,
+  landCounts,
   mainOf,
   meadowGrass,
   motherIncome,
   natureFood,
   natureIncome,
-  padUser,
   spawnInterval,
   towerDmg,
   unitAtk,
@@ -26,7 +27,7 @@ import {
 } from '../core/index.ts';
 import { Bar, Essence, Pic, fmt } from './common.tsx';
 import { COPY, FOOD_NAME } from './copy.ts';
-import { app, frame, modal, placing, pushToast, selectedBuilding, selectedPad, tab, toasts } from './store.ts';
+import { app, flagMode, frame, modal, placing, pushToast, selectedBuilding, selectedCell, tab, toasts } from './store.ts';
 
 // ── Top bar: the stage and the humans ───────────────────────────
 
@@ -38,12 +39,15 @@ export function TopBar() {
   const lv = humanLevel(run);
   const next = Math.ceil(BALANCE.human.researchPeriod - (run.stageTime % BALANCE.human.researchPeriod));
   const people = run.units.filter((u) => u.side === 'human').length;
+  const land = landCounts(run);
+  const pn = Math.round((land.nature / Math.max(1, land.total)) * 100);
+  const ph = Math.round((land.human / Math.max(1, land.total)) * 100);
   return (
     <header class="topbar">
       <div class="stage-badge">
         <b>{COPY.top.stage(run.stage)}</b>
         <small>
-          {COPY.era} · {COPY.top.camp(run.stage)}
+          {COPY.eras[run.era]} · {COPY.top.camp(run.stage)}
         </small>
       </div>
       <div class="foe">
@@ -57,6 +61,14 @@ export function TopBar() {
             {COPY.top.tools(lv)} · {COPY.top.nextTools(next)} · {COPY.top.people(people)}
           </small>
         </div>
+      </div>
+      <div class="land" title={COPY.top.landSplit(pn, ph)}>
+        <span class="land-label">{COPY.top.land}</span>
+        <span class="land-bar" role="meter" aria-label={COPY.top.landSplit(pn, ph)}>
+          <i class="n" style={{ width: `${pn}%` }} />
+          <i class="h" style={{ width: `${ph}%` }} />
+        </span>
+        <small class="num">{COPY.top.landSplit(pn, ph)}</small>
       </div>
       <div class="top-buttons">
         <button type="button" class="btn plain small" onClick={() => app.recenter()} title={COPY.top.recenter}>
@@ -113,6 +125,7 @@ export function Panel() {
         </small>
       </div>
       <FoodChain />
+      <FlagRow />
       <nav class="tabs" role="tablist">
         {(['build', 'evolve'] as const).map((t) => (
           <button type="button" role="tab" aria-selected={tab.value === t} class={tab.value === t ? 'on' : ''} onClick={() => (tab.value = t)}>
@@ -122,6 +135,37 @@ export function Panel() {
       </nav>
       <div class="panel-body">{tab.value === 'build' ? <BuildList /> : <EvolveList />}</div>
     </aside>
+  );
+}
+
+/** Rally flags: how many are out, plant one, pull them all. */
+function FlagRow() {
+  const run = app.game.run;
+  const on = flagMode.value;
+  return (
+    <section class="flags" title={COPY.flags.hint}>
+      <Pic k="flag/0" scale={1} />
+      <span class="flags-label">
+        {COPY.flags.title} <b class="num">{COPY.flags.count(run.flags.length, BALANCE.flags.max)}</b>
+      </span>
+      <button
+        type="button"
+        class={`btn ${on ? 'gold' : 'plain'} small`}
+        aria-pressed={on}
+        onClick={() => {
+          flagMode.value = !on;
+          placing.value = null;
+          if (!on) pushToast({ title: COPY.flags.placing }, 2400);
+        }}
+      >
+        {COPY.flags.place}
+      </button>
+      {run.flags.length > 0 && (
+        <button type="button" class="btn plain small" onClick={() => app.game.clearFlags()}>
+          {COPY.flags.clear}
+        </button>
+      )}
+    </section>
   );
 }
 
@@ -182,26 +226,18 @@ const GROUPS: { key: keyof typeof COPY.build.groups; kinds: NatureBuildingId[] }
   { key: 'defense', kinds: ['ancient'] },
 ];
 
-function laneName(pad: number): string {
-  const p = PADS[pad]!;
-  return `${COPY.build.lanes[p.lane]}${p.home ? '' : `${COPY.build.front}`}`;
-}
+/** Building kinds in hotkey order (1 … 8). */
+export const HOTKEYS: NatureBuildingId[] = GROUPS.flatMap((g) => g.kinds);
 
 function BuildList() {
   const game = app.game;
   const run = game.run;
-  const pad = selectedPad.value;
-  const padOk = pad !== null && padUser(run, pad) === 'nature';
+  const cell = selectedCell.value;
+  const cellOk = cell !== null && cellOwner(run, cell) === 'nature';
   const holding = placing.value;
   return (
     <div class="build">
-      <p class="hint">
-        {holding
-          ? COPY.build.placing(BUILDINGS[holding].name)
-          : padOk
-            ? COPY.build.onPad(laneName(pad!))
-            : COPY.build.pickPad}
-      </p>
+      <p class="hint">{holding ? COPY.build.placing(BUILDINGS[holding].name) : cellOk ? COPY.build.onCell : COPY.build.pickPad}</p>
       {holding && (
         <div class="row gap">
           <button type="button" class="btn green small" onClick={() => app.build(holding, null)}>
@@ -217,11 +253,12 @@ function BuildList() {
           <h3>{COPY.build.groups[g.key]}</h3>
           <div class="cards">
             {g.kinds.map((k) => (
-              <BuildCard kind={k} pad={padOk ? pad : null} />
+              <BuildCard kind={k} cell={cellOk ? cell : null} />
             ))}
           </div>
         </>
       ))}
+      <p class="hint keys">{COPY.keys}</p>
     </div>
   );
 }
@@ -240,7 +277,7 @@ function buildInfo(kind: NatureBuildingId): string {
   return def.role;
 }
 
-function BuildCard({ kind, pad }: { kind: NatureBuildingId; pad: number | null }) {
+function BuildCard({ kind, cell }: { kind: NatureBuildingId; cell: number | null }) {
   const game = app.game;
   const def = BUILDINGS[kind];
   const cost = game.buildCost(kind);
@@ -252,15 +289,18 @@ function BuildCard({ kind, pad }: { kind: NatureBuildingId; pad: number | null }
       pushToast({ title: COPY.build.problem.money, tone: 'bad' }, 1400);
       return;
     }
-    if (pad !== null) {
-      app.build(kind, pad);
+    if (cell !== null) {
+      app.build(kind, cell);
       return;
     }
     placing.value = on ? null : kind;
+    flagMode.value = false;
     selectedBuilding.value = null;
   };
+  const key = HOTKEYS.indexOf(kind) + 1;
   return (
-    <button type="button" class={`bcard ${on ? 'on' : ''}`} data-afford={afford || undefined} onClick={go}>
+    <button type="button" class={`bcard ${on ? 'on' : ''}`} data-afford={afford || undefined} onClick={go} title={`${def.name}（${key}）`}>
+      <kbd class="hotkey">{key}</kbd>
       <Pic k={`building/${kind}`} scale={1} class="bcard-pic" />
       <span class="bcard-text">
         <b>{def.name}</b>
@@ -339,7 +379,7 @@ export function BuildingCard() {
   const at = app.buildingScreen(id);
   if (!b || !at) return null;
   const def = BUILDINGS[b.kind];
-  const lane = b.pad >= 0 ? COPY.build.lanes[PADS[b.pad]!.lane] : null;
+  const main = isMain(b);
   const left = Math.max(8, Math.min(window.innerWidth - 228, at.x - 110));
   const top = Math.max(8, at.top - 8);
   return (
@@ -358,11 +398,11 @@ export function BuildingCard() {
         </small>
       </div>
       <p>
-        {b.pad < 0 ? (b.side === 'nature' ? COPY.building.main : COPY.building.lodgeMain) : def.makes ? `${COPY.build.makes(UNITS[def.makes].name)} · ${COPY.building.lane(lane!)}` : def.role}
+        {main ? (b.side === 'nature' ? COPY.building.main : COPY.building.lodgeMain) : def.makes ? `${COPY.build.makes(UNITS[def.makes].name)} · ${b.side === 'nature' ? COPY.building.march(game.run.flags.length) : ''}` : def.role}
       </p>
       {b.blocked && b.side === 'nature' && <p class="warn">{COPY.building.blocked[b.blocked]}</p>}
-      {b.side === 'human' && b.pad >= 0 && <p class="muted">{COPY.building.humanSide}</p>}
-      {b.side === 'nature' && b.pad >= 0 && (
+      {b.side === 'human' && !main && <p class="muted">{COPY.building.humanSide}</p>}
+      {b.side === 'nature' && !main && (
         <button
           type="button"
           class="btn red small"

@@ -1,4 +1,5 @@
 import { TALENT_IDS, TALENTS } from './config/talents.ts';
+import { CELLS } from './map/grid.ts';
 import { createMeta, createState, SAVE_VERSION, type GameState, type MetaState, type RunState } from './state.ts';
 
 type Json = Record<string, unknown>;
@@ -31,17 +32,18 @@ function parseMeta(raw: unknown): MetaState {
 /** A run is only trusted as a whole: same version, the arrays and records it needs. Anything off starts afresh. */
 function parseRun(raw: unknown): RunState | null {
   const r = obj(raw);
-  const arrays = ['units', 'buildings', 'projectiles', 'segments', 'picks', 'offer'];
+  const arrays = ['units', 'buildings', 'projectiles', 'control', 'explored', 'flags', 'picks', 'offer'];
   if (!arrays.every((k) => Array.isArray(r[k]))) return null;
+  if ((r.control as unknown[]).length !== CELLS || (r.explored as unknown[]).length !== CELLS) return null;
   if (typeof r.phase !== 'string' || !['battle', 'pick', 'over'].includes(r.phase)) return null;
   if (!r.levels || typeof r.levels !== 'object' || !r.human || typeof r.human !== 'object') return null;
-  for (const k of ['stage', 'time', 'stageTime', 'essence', 'nextId', 'rng']) if (typeof r[k] !== 'number' || !Number.isFinite(r[k])) return null;
+  for (const k of ['stage', 'time', 'stageTime', 'essence', 'nextId', 'rng', 'mapSeed', 'era']) if (typeof r[k] !== 'number' || !Number.isFinite(r[k])) return null;
   return r as unknown as RunState;
 }
 
 /**
- * Load a save. Version 5 is the three-lane game: older saves were a different game
- * (the open-map territory war) and are not carried over.
+ * Load a save. Version 6 is the open map with fog of war: older saves (the three-lane game and
+ * before) were a different game and are not carried over; their talents and genes go with them.
  */
 export function deserialize(raw: unknown): GameState {
   const data = obj(raw);

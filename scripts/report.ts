@@ -108,11 +108,11 @@ for (const style of STYLES) {
 lines.push('', '## 关键数值', '');
 lines.push('| 项目 | 取值 |', '|---|---|');
 lines.push(`| 自然开局 | 生机 ${BALANCE.nature.start}；母树 ${BUILDINGS.mothertree.hp} 血，每秒 ${BUILDINGS.mothertree.income} 生机 |`);
-lines.push(`| 人类开局 | 物资 ${BALANCE.human.start}（每关 +${BALANCE.human.startPerStage}）；部落大帐 ${BUILDINGS.lodge.hp} 血，每关 ×${BALANCE.human.mainHpGrowth} |`);
+lines.push(`| 人类开局 | 物资 ${BALANCE.human.start}（每关 +${BALANCE.human.startPerStage}）；主城 ${BUILDINGS.lodge.hp} 血，每关 ×${BALANCE.human.mainHpGrowth} |`);
 lines.push(`| 人类变强 | 每关起始等级 +${BALANCE.human.levelsPerStage}；每 ${BALANCE.human.researchPeriod} 秒改良工具 +1 级；每级血量和攻击 ×${1 + BALANCE.levelPower} |`);
 lines.push(`| 自然升级 | 每级血量和攻击 ×${1 + BALANCE.levelPower}；价格每级 ×${BALANCE.levelCostGrowth} |`);
 lines.push(`| 食物链 | 草场每座产草 ${BUILDINGS.meadow.grass}/秒（每级 ×${1 + BALANCE.meadowPerLevel}）；吃草：蚂蚁 ${UNITS.ant.eat}、鹿 ${UNITS.elk.eat}、猛犸 ${UNITS.mammoth.eat}；产肉：蚂蚁 ${UNITS.ant.meat}、鹿 ${UNITS.elk.meat}、猛犸 ${UNITS.mammoth.meat}；吃肉：狼 ${UNITS.wolf.eat}、剑齿虎 ${UNITS.sabertooth.eat}、熊 ${UNITS.bear.eat} |`);
-lines.push(`| 领地 | 每段地每秒 ${BALANCE.nature.perSegment} 生机，温泉另加 ${BALANCE.nature.spring} |`);
+lines.push(`| 领地 | 每块地每秒 ${BALANCE.nature.perCell} 生机，每个资源点另加 ${BALANCE.nature.site}；控制值越过 ±${BALANCE.territory.flip} 换主人 |`);
 lines.push('');
 
 const out = join(dirname(fileURLToPath(import.meta.url)), '..', 'docs', 'balance.md');
