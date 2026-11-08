@@ -1,11 +1,7 @@
 /** The two camps. The player is nature; the humans are run by the core. */
 export type Side = 'nature' | 'human';
-/** Who holds a stretch of lane. */
+/** Who holds a cell. */
 export type Owner = Side | 'neutral';
-
-/** Top, middle and bottom lane. */
-export type Lane = 0 | 1 | 2;
-export const LANES: readonly Lane[] = [0, 1, 2];
 
 export type NatureUnitId = 'ant' | 'elk' | 'mammoth' | 'wolf' | 'sabertooth' | 'bear';
 export type HumanUnitId = 'gatherer' | 'spearman' | 'javelin' | 'torch';

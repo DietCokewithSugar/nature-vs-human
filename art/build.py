@@ -1,9 +1,10 @@
-"""Builds every sprite into public/sprites/: atlas.png + atlas.json (PixiJS spritesheet) and map.png.
+"""Builds every sprite into public/sprites/: atlas.png + atlas.json (PixiJS spritesheet).
 
     npm run sprites        (python3 art/build.py)
 
-Keys: unit/<id>/walk0..3, unit/<id>/attack0..1, building/<id>, pad/<kind>, scaffold/<side>,
-proj/<kind>[..], ring/<side>/<w>, fx/<name><n>, icon/<name>, terrain/<side>/<lane>-<seg>.
+Keys: unit/<id>/walk0..3, unit/<id>/attack0..1, building/<id>, pad/<side>, scaffold/<side>,
+proj/<kind>[..], ring/<side>/<w>, fx/<name><n>, icon/<name>, and the ground kit from map.py:
+tile/, edge/, own/, curb/, deco/, site/, flag/.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import os
 
 from buildings import ALL_BUILDINGS
 from kit import PREVIEW, ROOT, Atlas, check_palette, contact
-from map import SEGMENTS, background, territory
+from map import all_ground, preview
 from props import cone, fireball, flame, hit, icon, ICONS, pad, poof, ring, rubble, scaffold, smoke, spear
 from units import ALL_UNITS
 
@@ -35,7 +36,7 @@ def main() -> None:
         im, anchor = make()
         atlas.add(f"building/{bid}", im, anchor)
         brow.append(im)
-    for kind in ("nature", "human", "field"):
+    for kind in ("nature", "human"):
         im, anchor = pad(kind)
         atlas.add(f"pad/{kind}", im, anchor, keep=True)
     for side in ("nature", "human"):
@@ -61,18 +62,16 @@ def main() -> None:
     for name in ICONS:
         im, anchor = icon(name)
         atlas.add(f"icon/{name}", im, anchor, keep=True)
-    for side in ("nature", "human"):
-        for lane in range(3):
-            for seg in range(SEGMENTS):
-                im = territory(side, lane, seg)
-                atlas.add(f"terrain/{side}/{lane}-{seg}", im, (0, 0), keep=True)
+    for key, im, anchor, keep in all_ground():
+        atlas.add(key, im, anchor, keep=keep)
     for key, im, _ in atlas.items:
         check_palette(im, key)
     atlas.pack(os.path.join(OUT, "atlas.png"), os.path.join(OUT, "atlas.json"))
-    bg = background()
-    check_palette(bg, "map")
-    bg.save(os.path.join(OUT, "map.png"))
-    print("map: 576x320 -> public/sprites/map.png")
+    stale = os.path.join(OUT, "map.png")
+    if os.path.exists(stale):
+        os.remove(stale)
+    os.makedirs(PREVIEW, exist_ok=True)
+    preview().resize((preview().width * 2, preview().height * 2), 0).save(os.path.join(PREVIEW, "ground.png"))
     contact(os.path.join(PREVIEW, "all-units.png"), rows, scale=4)
     contact(os.path.join(PREVIEW, "all-buildings.png"), [brow], scale=3)
 

@@ -1,20 +1,26 @@
 import { BALANCE } from './config/balance.ts';
 import { TALENT_IDS, type TalentId } from './config/talents.ts';
-import { SEGMENTS } from './map/layout.ts';
+import { generateMap } from './map/generate.ts';
+import { CELLS } from './map/grid.ts';
 import { randomSeed } from './rng.ts';
-import { LEVEL_IDS, type BuildingId, type Diet, type Lane, type LevelId, type Phase, type ProjectileKind, type Side, type UnitId } from './types.ts';
+import { LEVEL_IDS, type BuildingId, type Diet, type LevelId, type Phase, type ProjectileKind, type Side, type UnitId } from './types.ts';
 
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export interface Unit {
   id: number;
   kind: UnitId;
   side: Side;
-  lane: Lane;
   x: number;
   y: number;
-  /** Where across the lane this unit likes to walk, px from the centre line. */
-  off: number;
+  /** The building that made it. */
+  home: number;
+  /** The cell it is heading for (−1: none yet), and when it next reconsiders. */
+  goal: number;
+  rethink: number;
+  /** Where in a cell it likes to stand, px from the centre (so a crowd spreads out). */
+  ox: number;
+  oy: number;
   hp: number;
   maxHp: number;
   /** Entity id of what it's fighting (unit or building), 0 for none. */
@@ -35,21 +41,31 @@ export interface Building {
   id: number;
   kind: BuildingId;
   side: Side;
-  /** Pad index, or −1 for the main building. */
-  pad: number;
+  /** The cell it stands on (the top-left one of a main building's 2 × 2). */
+  cell: number;
+  /** Its foot on the map (bottom centre of the footprint, a little in from the edge). */
   x: number;
   y: number;
   hp: number;
   maxHp: number;
   /** Construction 0 … 1; it works once it reaches 1. */
   progress: number;
-  /** Spawners: seconds towards the next birth. Towers: seconds until the next shot. */
+  /** Spawners: seconds towards the next birth. */
   timer: number;
+  /** Towers (and main buildings that shoot): seconds until the next shot. */
+  shot: number;
   /** Spawners: the food that's holding the next birth back. */
   blocked: Diet | null;
   hitAt: number;
-  /** Rotates the main building's births across the lanes. */
-  nextLane: Lane;
+  /** The humans' buildings: nature has seen it, so it shows (greyed) under the fog. */
+  seen: boolean;
+}
+
+/** A rally flag: nature's army heads for the nearest one and fights round it. */
+export interface Flag {
+  id: number;
+  x: number;
+  y: number;
 }
 
 export interface Projectile {
@@ -78,6 +94,8 @@ export interface HumanState {
   think: number;
   /** Research levels gained this stage (one every researchPeriod). */
   research: number;
+  /** The soldiers are out on an attack (they gather at home until the wave is big enough). */
+  attacking: boolean;
 }
 
 export interface RunStats {
@@ -115,8 +133,15 @@ export interface RunState {
   /** Run time the human lodge fell this stage (the pick follows a moment later), or null. */
   wonAt: number | null;
   human: HumanState;
-  /** Control of each stretch, lane by lane: −100 human … +100 nature. */
-  segments: number[][];
+  /** The map is generated from this seed (saves keep only the seed). */
+  mapSeed: number;
+  /** 0 ice age, 1 ancient, 2 industrial, 3 modern: how many rings of the map are open. */
+  era: number;
+  /** Control of each cell: −100 human … +100 nature. */
+  control: number[];
+  /** Cells nature has seen (1) at least once: everything else is black. */
+  explored: number[];
+  flags: Flag[];
   units: Unit[];
   buildings: Building[];
   projectiles: Projectile[];
@@ -152,11 +177,13 @@ export function createMeta(): MetaState {
   };
 }
 
-export function startSegments(): number[][] {
-  const owned = BALANCE.territory.startOwned;
-  return [0, 1, 2].map(() =>
-    Array.from({ length: SEGMENTS }, (_, i) => (i < owned ? BALANCE.territory.max : i >= SEGMENTS - owned ? -BALANCE.territory.max : 0)),
-  );
+/** Control at the start of a run: the ice-age square as the map lays it out, the rest untouched. */
+export function startControl(mapSeed: number): number[] {
+  const map = generateMap(mapSeed);
+  const max = BALANCE.territory.max;
+  const out = new Array<number>(CELLS).fill(0);
+  for (let i = 0; i < CELLS; i++) if (map.ring[i] === 0) out[i] = map.owner[i]! * max;
+  return out;
 }
 
 export function emptyStats(): RunStats {
@@ -179,8 +206,12 @@ export function createRun(seed = randomSeed()): RunState {
     offer: [],
     rerolls: 0,
     wonAt: null,
-    human: { supplies: 0, food: 0, think: 0, research: 0 },
-    segments: startSegments(),
+    human: { supplies: 0, food: 0, think: 0, research: 0, attacking: false },
+    mapSeed: seed >>> 0,
+    era: 0,
+    control: startControl(seed >>> 0),
+    explored: new Array<number>(CELLS).fill(0),
+    flags: [],
     units: [],
     buildings: [],
     projectiles: [],

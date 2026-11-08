@@ -3,22 +3,37 @@ import { BUILDINGS, NATURE_BUILDABLE } from './config/buildings.ts';
 import { PICKS, PICK_BY_ID } from './config/picks.ts';
 import { TALENTS, talentCost, type TalentId } from './config/talents.ts';
 import { UNITS } from './config/units.ts';
-import { PADS } from './map/layout.ts';
-import { createRun, startSegments, type Building, type GameState, type RunResult, type RunState, type Unit } from './state.ts';
+import { generateMap } from './map/generate.ts';
+import { CELL, CELLS, cellAt, cellDist, cxOf, cyOf, inGrid, idx } from './map/grid.ts';
+import { createRun, type Building, type GameState, type RunResult, type RunState, type Unit } from './state.ts';
 import { randomSeed } from './rng.ts';
-import { freeHumanPads, humanOpening, stepHumans } from './sim/ai.ts';
+import { humanOpening, humanSpot, stepHumans } from './sim/ai.ts';
 import { stepProjectiles, stepTowers, stepUnits } from './sim/combat.ts';
-import { addBuilding, buildingOnPad, isUnit, mainOf, padUser, rand, type Ctx } from './sim/ctx.ts';
+import {
+  addBuilding,
+  canPlace,
+  cellOwner,
+  footprintCells,
+  isMain,
+  isUnit,
+  mainOf,
+  mapOf,
+  navOf,
+  openCell,
+  rand,
+  type Ctx,
+} from './sim/ctx.ts';
 import { stepEconomy } from './sim/economy.ts';
 import type { CoreEvent } from './sim/events.ts';
 import { stepBuildings } from './sim/spawn.ts';
 import { buildingMaxHp, computeMods, humanLevel, levelCost, unitMaxHp, type Mods } from './sim/stats.ts';
 import { stepTerritory } from './sim/territory.ts';
+import { stepVision } from './sim/vision.ts';
 import type { LevelId, NatureBuildingId, NatureUnitId } from './types.ts';
 
 export type { CoreEvent } from './sim/events.ts';
 
-export type BuildProblem = 'phase' | 'pad' | 'taken' | 'ground' | 'money' | 'kind';
+export type BuildProblem = 'phase' | 'cell' | 'taken' | 'ground' | 'money' | 'kind';
 export type BuildVerdict = { ok: true; cost: number } | { ok: false; why: BuildProblem };
 
 /**
@@ -34,9 +49,18 @@ export class Game {
   constructor(state: GameState) {
     this.state = state;
     this.mods = computeMods(state.run, state.meta);
-    this.ctx = { run: state.run, meta: state.meta, mods: this.mods, emit: (e) => this.emit(e), byId: new Map() };
+    this.ctx = {
+      run: state.run,
+      meta: state.meta,
+      mods: this.mods,
+      emit: (e) => this.emit(e),
+      byId: new Map(),
+      onCell: new Map(),
+      visible: new Uint8Array(CELLS),
+    };
     this.reindex();
     if (!state.run.buildings.length && state.run.phase !== 'over') this.startRun(state.run.rng);
+    else stepVision(this.ctx);
   }
 
   get run(): RunState {
@@ -54,9 +78,19 @@ export class Game {
 
   private reindex(): void {
     const m = this.ctx.byId;
+    const on = this.ctx.onCell;
     m.clear();
+    on.clear();
     for (const u of this.run.units) m.set(u.id, u);
-    for (const b of this.run.buildings) m.set(b.id, b);
+    for (const b of this.run.buildings) {
+      m.set(b.id, b);
+      for (const c of footprintCells(b.kind, b.cell)) on.set(c, b);
+    }
+  }
+
+  /** Cells nature can see right now (1 = visible). Explored cells are in run.explored. */
+  get visible(): Uint8Array {
+    return this.ctx.visible;
   }
 
   /** Recompute picks and talents, and rescale everyone's health to match. */
@@ -77,21 +111,34 @@ export class Game {
 
   // ── Runs and stages ─────────────────────────────────────────
 
-  /** A fresh run from stage 1: a bare home with only the mother tree. */
+  /** A fresh run from stage 1: a new map, the mother tree in its enclave, the humans' capital. */
   startRun(seed = randomSeed()): void {
     this.state.run = createRun(seed);
     this.ctx.run = this.state.run;
     this.refresh();
     this.run.essence = BALANCE.nature.start + this.mods.startEssence;
     this.ctx.byId.clear();
-    addBuilding(this.ctx, 'mothertree', -1, true);
+    this.ctx.onCell.clear();
+    addBuilding(this.ctx, 'mothertree', generateMap(this.run.mapSeed).mother, true);
     this.setupStage(1);
     this.emit({ type: 'runStarted' });
   }
 
-  /** Lay out the humans' camp for a stage and reset the field. Nature keeps its home. */
+  /**
+   * Start a stage. Its era opens the next ring of the map (laid out as the map says); nature keeps
+   * the ground and buildings it has; the humans rebuild their capital (retaking the cells round
+   * it), their opening buildings, and the towns of every open ring where they still hold the land.
+   */
   private setupStage(stage: number): void {
     const run = this.run;
+    const map = mapOf(run);
+    const max = BALANCE.territory.max;
+    const era = Math.min(stage - 1, 3);
+    const opened = era > run.era;
+    for (let e = run.era + 1; e <= era; e++) {
+      for (let i = 0; i < CELLS; i++) if (map.ring[i] === e) run.control[i] = map.owner[i]! * max;
+    }
+    run.era = era;
     run.stage = stage;
     run.stageTime = 0;
     run.wonAt = null;
@@ -99,15 +146,31 @@ export class Game {
     run.offer = [];
     run.units = [];
     run.projectiles = [];
-    run.segments = startSegments();
-    // Nature keeps everything it built; field buildings now stand on neutral ground and hold it.
-    run.buildings = run.buildings.filter((b) => b.side === 'nature');
-    run.human = { supplies: BALANCE.human.start + BALANCE.human.startPerStage * (stage - 1), food: 10, think: 3, research: 0 };
+    // The capital's quarter goes back to the humans; anything of nature's in it is cleared away.
+    const ccx = cxOf(map.capital) + 1;
+    const ccy = cyOf(map.capital) + 1;
+    const R = BALANCE.territory.capitalRadius;
+    const core = new Set<number>();
+    for (let cy = Math.floor(ccy - R - 1); cy <= ccy + R; cy++) {
+      for (let cx = Math.floor(ccx - R - 1); cx <= ccx + R; cx++) {
+        if (!inGrid(cx, cy) || Math.hypot(cx + 0.5 - ccx, cy + 0.5 - ccy) > R) continue;
+        const i = idx(cx, cy);
+        if (!openCell(run, i)) continue;
+        run.control[i] = -max;
+        core.add(i);
+      }
+    }
+    run.buildings = run.buildings.filter((b) => b.side === 'nature' && (isMain(b) || !footprintCells(b.kind, b.cell).some((c) => core.has(c))));
+    run.human = { supplies: BALANCE.human.start + BALANCE.human.startPerStage * (stage - 1), food: 10, think: 3, research: 0, attacking: false };
     this.reindex();
-    addBuilding(this.ctx, 'lodge', -1, true);
-    for (const o of humanOpening(stage)) {
-      const pad = freeHumanPads(run, o.lane, false)[0] ?? freeHumanPads(run, null, false)[0];
-      if (pad !== undefined) addBuilding(this.ctx, o.kind, pad, true);
+    const lodge = addBuilding(this.ctx, 'lodge', map.capital, true);
+    for (const kind of humanOpening(stage)) {
+      const cell = humanSpot(run, kind, lodge.x, lodge.y, 9);
+      if (cell !== null) addBuilding(this.ctx, kind, cell, true);
+    }
+    for (const town of map.towns) {
+      if (town.era > era) continue;
+      for (const b of town.buildings) if (canPlace(run, 'human', b.kind, b.cell)) addBuilding(this.ctx, b.kind, b.cell, true);
     }
     this.refresh();
     for (const b of run.buildings) {
@@ -117,7 +180,9 @@ export class Game {
     }
     run.grassStock = 0;
     run.meatStock = 0;
-    this.emit({ type: 'stageStarted', stage });
+    for (const f of run.flags.slice()) if (!openCell(run, cellAt(f.x, f.y))) run.flags = run.flags.filter((x) => x !== f);
+    stepVision(this.ctx);
+    this.emit({ type: 'stageStarted', stage, era, opened });
   }
 
   // ── Time ────────────────────────────────────────────────────
@@ -158,6 +223,7 @@ export class Game {
     stepUnits(ctx, dt);
     stepProjectiles(ctx, dt);
     stepTerritory(ctx, dt);
+    stepVision(ctx);
     stepHumans(ctx, dt);
     this.cleanup();
 
@@ -202,10 +268,10 @@ export class Game {
             run.essence += bounty;
             this.emit({ type: 'bounty', x: b.x, y: b.y, amount: bounty });
           }
-          if (b.pad < 0) humanMainLost = true;
+          if (isMain(b)) humanMainLost = true;
         } else {
           run.stats.lost++;
-          if (b.pad < 0) natureMainLost = true;
+          if (isMain(b)) natureMainLost = true;
         }
       }
       run.buildings = standing;
@@ -249,7 +315,7 @@ export class Game {
     const kept = new Set<NatureUnitId>();
     for (const b of run.buildings) {
       const makes = BUILDINGS[b.kind].makes;
-      if (b.side === 'nature' && makes && b.pad >= 0) kept.add(makes as NatureUnitId);
+      if (b.side === 'nature' && makes && !isMain(b)) kept.add(makes as NatureUnitId);
     }
     const pool = PICKS.filter((p) => !exclude.includes(p.id));
     const out: string[] = [];
@@ -323,52 +389,69 @@ export class Game {
     return Math.ceil(def.cost * Math.pow(def.costGrowth, n));
   }
 
-  buildCheck(padId: number, kind: NatureBuildingId): BuildVerdict {
+  buildCheck(cell: number, kind: NatureBuildingId): BuildVerdict {
     const run = this.run;
     if (run.phase !== 'battle' || run.wonAt !== null) return { ok: false, why: 'phase' };
     if (!NATURE_BUILDABLE.includes(kind)) return { ok: false, why: 'kind' };
-    if (!PADS[padId]) return { ok: false, why: 'pad' };
-    if (buildingOnPad(run, padId)) return { ok: false, why: 'taken' };
-    if (padUser(run, padId) !== 'nature') return { ok: false, why: 'ground' };
+    if (cell < 0 || cell >= CELLS || !openCell(run, cell)) return { ok: false, why: 'cell' };
+    if (cellOwner(run, cell) !== 'nature') return { ok: false, why: 'ground' };
+    if (!canPlace(run, 'nature', kind, cell)) return { ok: false, why: 'taken' };
     const cost = this.buildCost(kind);
     if (run.essence < cost) return { ok: false, why: 'money' };
     return { ok: true, cost };
   }
 
-  /** Pads nature can build on right now. */
-  openPads(): number[] {
-    return PADS.filter((p) => padUser(this.run, p.id) === 'nature' && !buildingOnPad(this.run, p.id)).map((p) => p.id);
+  /** Cells nature can build on right now. */
+  openCells(): number[] {
+    const run = this.run;
+    const out: number[] = [];
+    for (let i = 0; i < CELLS; i++) {
+      if (run.control[i]! < BALANCE.territory.flip) continue;
+      if (canPlace(run, 'nature', 'meadow', i)) out.push(i);
+    }
+    return out;
   }
 
   /**
-   * The best free pad for a kind: meadows and ancient trees at home, spawners on the lane
-   * with the fewest of nature's spawners, home pads before forward ones. Null if none.
+   * The best free cell for a kind: meadows close to the mother tree; watch trees on the cell
+   * nearest the humans' capital; nests near home, on the side facing the capital. Null if none.
    */
-  autoPad(kind: NatureBuildingId): number | null {
+  autoCell(kind: NatureBuildingId): number | null {
     const run = this.run;
-    const free = PADS.filter((p) => padUser(run, p.id) === 'nature' && !buildingOnPad(run, p.id));
+    const free = this.openCells();
     if (!free.length) return null;
-    const perLane = [0, 0, 0];
-    for (const b of run.buildings) if (b.side === 'nature' && b.pad >= 0 && BUILDINGS[b.kind].makes) perLane[PADS[b.pad]!.lane]!++;
-    const def = BUILDINGS[kind];
-    free.sort((a, b) => {
-      if (!def.makes) {
-        // Rear pads first for producers; towers want the front of home.
-        const rear = kind === 'meadow' ? a.x - b.x : b.x - a.x;
-        return (a.home ? 0 : 1) - (b.home ? 0 : 1) || rear;
+    const tree = mainOf(run, 'nature');
+    const capital = mainOf(run, 'human');
+    const map = mapOf(run);
+    const home = tree ? cellAt(tree.x, tree.y - CELL) : map.mother;
+    const cap = capital ? capital.cell : map.capital;
+    const field = navOf(run).field(cap);
+    const score = (c: number): number => {
+      const toCap = Math.min(field[c]!, 999);
+      const toHome = cellDist(c, home);
+      if (kind === 'meadow') return toHome;
+      if (kind === 'ancient') return toCap;
+      return toCap + Math.max(0, toHome - 5) * 2;
+    };
+    let best = free[0]!;
+    let bestS = score(best);
+    for (const c of free) {
+      const s = score(c);
+      if (s < bestS) {
+        bestS = s;
+        best = c;
       }
-      return perLane[a.lane]! - perLane[b.lane]! || (a.home ? 0 : 1) - (b.home ? 0 : 1) || b.x - a.x;
-    });
-    return free[0]!.id;
+    }
+    return best;
   }
 
-  build(padId: number, kind: NatureBuildingId): boolean {
-    const v = this.buildCheck(padId, kind);
+  build(cell: number, kind: NatureBuildingId): boolean {
+    const v = this.buildCheck(cell, kind);
     if (!v.ok) return false;
     this.run.essence -= v.cost;
-    const b = addBuilding(this.ctx, kind, padId, false);
+    const b = addBuilding(this.ctx, kind, cell, false);
     this.run.stats.built++;
-    this.emit({ type: 'placed', id: b.id, kind, side: 'nature', pad: padId });
+    this.emit({ type: 'placed', id: b.id, kind, side: 'nature', cell, x: b.x, y: b.y });
     return true;
   }
 
@@ -376,13 +459,45 @@ export class Game {
   demolish(id: number): boolean {
     const run = this.run;
     const b = run.buildings.find((x) => x.id === id);
-    if (!b || b.side !== 'nature' || b.pad < 0 || run.phase !== 'battle') return false;
+    if (!b || b.side !== 'nature' || isMain(b) || run.phase !== 'battle') return false;
     // Half of what this one cost (the price before it was built).
     const paid = this.buildCost(b.kind as NatureBuildingId) / BUILDINGS[b.kind].costGrowth;
     run.buildings = run.buildings.filter((x) => x !== b);
     run.essence += Math.floor(paid / 2);
     this.reindex();
     return true;
+  }
+
+  // ── Rally flags ─────────────────────────────────────────────
+
+  /** Plant a rally flag on open ground nature has seen. The oldest goes when there are too many. */
+  placeFlag(x: number, y: number): boolean {
+    const run = this.run;
+    const cell = cellAt(x, y);
+    if (run.phase === 'over' || cell < 0 || !openCell(run, cell) || !run.explored[cell]) return false;
+    while (run.flags.length >= BALANCE.flags.max) run.flags.shift();
+    run.flags.push({ id: run.nextId++, x: (cxOf(cell) + 0.5) * CELL, y: (cyOf(cell) + 0.5) * CELL });
+    this.flagsChanged();
+    return true;
+  }
+
+  removeFlag(id: number): boolean {
+    const before = this.run.flags.length;
+    this.run.flags = this.run.flags.filter((f) => f.id !== id);
+    if (this.run.flags.length === before) return false;
+    this.flagsChanged();
+    return true;
+  }
+
+  clearFlags(): void {
+    if (!this.run.flags.length) return;
+    this.run.flags = [];
+    this.flagsChanged();
+  }
+
+  private flagsChanged(): void {
+    for (const u of this.run.units) if (u.side === 'nature') u.rethink = 0;
+    this.emit({ type: 'flags' });
   }
 
   // ── Levels ──────────────────────────────────────────────────

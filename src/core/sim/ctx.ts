@@ -1,10 +1,12 @@
 import { BALANCE } from '../config/balance.ts';
 import { BUILDINGS } from '../config/buildings.ts';
 import { UNITS } from '../config/units.ts';
-import { LANE_HALF, LANE_Y, MAINS, PADS, segmentAt } from '../map/layout.ts';
+import { generateMap, type WorldMap } from '../map/generate.ts';
+import { CELL, CELLS, GRID, cellAt, cxOf, cyOf, holdable } from '../map/grid.ts';
+import { navFor, walkable, type Nav } from '../map/nav.ts';
 import { nextRandom } from '../rng.ts';
 import type { Building, MetaState, RunState, Unit } from '../state.ts';
-import type { BuildingId, Lane, Owner, Side, UnitId } from '../types.ts';
+import type { BuildingId, Owner, Side, UnitId } from '../types.ts';
 import type { CoreEvent } from './events.ts';
 import { buildingMaxHp, unitMaxHp, type Mods } from './stats.ts';
 
@@ -16,14 +18,26 @@ export interface Ctx {
   emit: (e: CoreEvent) => void;
   /** Units and buildings by id, rebuilt at the start of each step. */
   byId: Map<number, Unit | Building>;
+  /** The building standing on each cell, rebuilt at the start of each step. */
+  onCell: Map<number, Building>;
+  /** Cells nature can see right now (1), recomputed every step; not saved. */
+  visible: Uint8Array;
 }
 
 export function rand(ctx: Ctx): number {
   return nextRandom(ctx.run);
 }
 
+export function mapOf(run: RunState): WorldMap {
+  return generateMap(run.mapSeed);
+}
+
+export function navOf(run: RunState): Nav {
+  return navFor(mapOf(run), run.era);
+}
+
 export function isUnit(e: Unit | Building): e is Unit {
-  return 'lane' in e;
+  return 'goal' in e;
 }
 
 export function ownerOf(control: number): Owner {
@@ -32,63 +46,116 @@ export function ownerOf(control: number): Owner {
   return 'neutral';
 }
 
-export function segOwner(run: RunState, lane: Lane, seg: number): Owner {
-  return ownerOf(run.segments[lane]![seg]!);
+export function cellOwner(run: RunState, cell: number): Owner {
+  return ownerOf(run.control[cell] ?? 0);
 }
 
-/** Who may build on a pad right now. */
-export function padUser(run: RunState, padId: number): Side | null {
-  const pad = PADS[padId];
-  if (!pad) return null;
-  if (pad.home) return pad.home;
-  const o = segOwner(run, pad.lane, pad.seg);
-  return o === 'neutral' ? null : o;
+/** Is a cell part of the open map and holdable (not water or volcano)? */
+export function openCell(run: RunState, cell: number): boolean {
+  return walkable(mapOf(run), run.era, cell);
 }
 
-export function buildingOnPad(run: RunState, padId: number): Building | undefined {
-  return run.buildings.find((b) => b.pad === padId);
+/** Side length of a building's footprint, in cells. */
+export function footprintOf(kind: BuildingId): number {
+  return BUILDINGS[kind].main ? 2 : 1;
+}
+
+export function footprintCells(kind: BuildingId, cell: number): number[] {
+  return footprintOf(kind) === 2 ? [cell, cell + 1, cell + GRID, cell + GRID + 1] : [cell];
+}
+
+/** Body radius of a building: units stop this far from its foot to hit it. */
+export function buildingRadius(kind: BuildingId): number {
+  return BUILDINGS[kind].main ? 26 : 14;
+}
+
+/** Where a building's foot goes for a footprint whose top-left cell is `cell`. */
+export function buildingSpot(kind: BuildingId, cell: number): { x: number; y: number } {
+  const n = footprintOf(kind);
+  return { x: (cxOf(cell) + n / 2) * CELL, y: (cyOf(cell) + n) * CELL - (n === 2 ? 8 : 6) };
 }
 
 export function mainOf(run: RunState, side: Side): Building | undefined {
-  return run.buildings.find((b) => b.side === side && b.pad === -1);
+  return run.buildings.find((b) => b.side === side && BUILDINGS[b.kind].main);
 }
 
-export function addBuilding(ctx: Ctx, kind: BuildingId, padId: number, done: boolean): Building {
+export function isMain(b: Building): boolean {
+  return BUILDINGS[b.kind].main === true;
+}
+
+/** The building on a cell (any of a main building's four), if any. */
+export function buildingAt(run: RunState, cell: number): Building | undefined {
+  for (const b of run.buildings) if (footprintCells(b.kind, b.cell).includes(cell)) return b;
+  return undefined;
+}
+
+/**
+ * Can `side` put a building with this footprint here? Every cell must be open, held by that side
+ * and free, with a clear cell between it and any other building (and off the resource sites).
+ */
+export function canPlace(run: RunState, side: Side, kind: BuildingId, cell: number): boolean {
+  if (cell < 0 || cell >= CELLS) return false;
+  const n = footprintOf(kind);
+  const cx = cxOf(cell);
+  const cy = cyOf(cell);
+  if (cx + n > GRID || cy + n > GRID) return false;
+  const map = mapOf(run);
+  const cells = footprintCells(kind, cell);
+  for (const c of cells) {
+    if (!openCell(run, c) || cellOwner(run, c) !== side) return false;
+    if (map.sites.some((s) => s.cell === c)) return false;
+  }
+  for (const b of run.buildings) {
+    const bn = footprintOf(b.kind);
+    const bx = cxOf(b.cell);
+    const by = cyOf(b.cell);
+    // Footprints grown by one cell all round must not overlap.
+    if (cx < bx + bn + 1 && bx < cx + n + 1 && cy < by + bn + 1 && by < cy + n + 1) return false;
+  }
+  return true;
+}
+
+export function addBuilding(ctx: Ctx, kind: BuildingId, cell: number, done: boolean): Building {
   const def = BUILDINGS[kind];
-  const site = padId < 0 ? MAINS[def.side] : PADS[padId]!;
+  const spot = buildingSpot(kind, cell);
   const maxHp = buildingMaxHp(kind, ctx.run, ctx.mods);
   const b: Building = {
     id: ctx.run.nextId++,
     kind,
     side: def.side,
-    pad: padId,
-    x: site.x,
-    y: site.y,
+    cell,
+    x: spot.x,
+    y: spot.y,
     hp: done ? maxHp : maxHp * 0.1,
     maxHp,
     progress: done ? 1 : 0,
     timer: 0,
+    shot: 0,
     blocked: null,
     hitAt: -99,
-    nextLane: 1,
+    seen: def.side === 'nature',
   };
   ctx.run.buildings.push(b);
   ctx.byId.set(b.id, b);
+  for (const c of footprintCells(kind, cell)) ctx.onCell.set(c, b);
   return b;
 }
 
-export function addUnit(ctx: Ctx, kind: UnitId, lane: Lane, x: number, y: number): Unit {
+export function addUnit(ctx: Ctx, kind: UnitId, home: number, x: number, y: number): Unit {
   const def = UNITS[kind];
   const maxHp = unitMaxHp(kind, ctx.run, ctx.mods);
-  const off = Math.round((rand(ctx) * 2 - 1) * (LANE_HALF - def.r - 6));
+  const spread = CELL / 2 - def.r - 2;
   const u: Unit = {
     id: ctx.run.nextId++,
     kind,
     side: def.side,
-    lane,
     x,
     y,
-    off,
+    home,
+    goal: -1,
+    rethink: 0,
+    ox: Math.round((rand(ctx) * 2 - 1) * spread),
+    oy: Math.round((rand(ctx) * 2 - 1) * spread),
     hp: maxHp,
     maxHp,
     target: 0,
@@ -106,8 +173,25 @@ export function addUnit(ctx: Ctx, kind: UnitId, lane: Lane, x: number, y: number
   return u;
 }
 
-/** Where a unit is on the map: its lane and stretch, if it's in the field. */
-export function unitSegment(u: Unit): number {
-  if (Math.abs(u.y - LANE_Y[u.lane]) > LANE_HALF + 4) return -1;
-  return segmentAt(u.x);
+/** The cell a unit stands on, if it's open ground (else −1). */
+export function unitCell(run: RunState, u: Unit): number {
+  const c = cellAt(u.x, u.y);
+  return c >= 0 && openCell(run, c) ? c : -1;
+}
+
+/** Count cells by holder over the open map. */
+export function landCounts(run: RunState): { nature: number; human: number; neutral: number; total: number } {
+  const map = mapOf(run);
+  const flip = BALANCE.territory.flip;
+  let nature = 0;
+  let human = 0;
+  let total = 0;
+  for (let i = 0; i < CELLS; i++) {
+    if (map.ring[i]! > run.era || !holdable(map.terrain[i]!)) continue;
+    total++;
+    const c = run.control[i]!;
+    if (c >= flip) nature++;
+    else if (c <= -flip) human++;
+  }
+  return { nature, human, neutral: total - nature - human, total };
 }

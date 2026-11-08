@@ -1,10 +1,10 @@
 import { BALANCE } from '../config/balance.ts';
 import { BUILDINGS } from '../config/buildings.ts';
 import { UNITS } from '../config/units.ts';
-import { SPRINGS } from '../map/layout.ts';
+import { CELLS, holdable } from '../map/grid.ts';
 import type { RunState } from '../state.ts';
 import type { Diet, Side, UnitId } from '../types.ts';
-import { segOwner, unitSegment, type Ctx } from './ctx.ts';
+import { mapOf, unitCell, type Ctx } from './ctx.ts';
 import { meadowGrass, motherIncome, unitEat, unitMeat, type Mods } from './stats.ts';
 
 export interface FoodLine {
@@ -23,7 +23,7 @@ export interface FoodSummary {
 export interface IncomeParts {
   main: number;
   ground: number;
-  springs: number;
+  sites: number;
   gather: number;
   total: number;
 }
@@ -61,33 +61,44 @@ export function humanFood(run: RunState): FoodLine {
   return { supply, demand, stock: run.human.food, cap: stockCap(supply) };
 }
 
-/** Stretches a side holds, and how many of them are hot springs. */
-export function held(run: RunState, side: Side): { segments: number; springs: number } {
-  let segments = 0;
-  for (const lane of [0, 1, 2] as const) for (let s = 0; s < run.segments[lane]!.length; s++) if (segOwner(run, lane, s) === side) segments++;
-  let springs = 0;
-  for (const sp of SPRINGS) if (segOwner(run, sp.lane, sp.seg) === side) springs++;
-  return { segments, springs };
+/** Cells a side holds on the open map, and how many of them are resource sites. */
+export function held(run: RunState, side: Side): { cells: number; sites: number } {
+  const map = mapOf(run);
+  const flip = BALANCE.territory.flip;
+  const sign = side === 'nature' ? 1 : -1;
+  let cells = 0;
+  for (let i = 0; i < CELLS; i++) {
+    if (map.ring[i]! > run.era || !holdable(map.terrain[i]!)) continue;
+    if (run.control[i]! * sign >= flip) cells++;
+  }
+  let sites = 0;
+  for (const s of map.sites) if (map.ring[s.cell]! <= run.era && run.control[s.cell]! * sign >= flip) sites++;
+  return { cells, sites };
 }
 
 export function natureIncome(run: RunState, mods: Mods): IncomeParts {
   const h = held(run, 'nature');
   const main = run.buildings.some((b) => b.kind === 'mothertree') ? motherIncome(run, mods) : 0;
-  const ground = h.segments * BALANCE.nature.perSegment * mods.income;
-  const springs = h.springs * BALANCE.nature.spring * mods.income;
-  return { main, ground, springs, gather: 0, total: main + ground + springs };
+  const ground = h.cells * BALANCE.nature.perCell * mods.income;
+  const sites = h.sites * BALANCE.nature.site * mods.income;
+  return { main, ground, sites, gather: 0, total: main + ground + sites };
 }
 
 export function humanIncome(run: RunState): IncomeParts {
   const h = held(run, 'human');
   const lodge = run.buildings.find((b) => b.kind === 'lodge');
   const main = lodge ? (BUILDINGS.lodge.income ?? 0) + BALANCE.human.incomePerStage * (run.stage - 1) : 0;
-  const ground = h.segments * BALANCE.human.perSegment;
-  const springs = h.springs * BALANCE.human.spring;
+  const ground = h.cells * BALANCE.human.perCell;
+  const sites = h.sites * BALANCE.human.site;
+  // Gatherers bring in supplies while they work ground that isn't the humans' yet.
   let workers = 0;
-  for (const u of run.units) if (u.kind === 'gatherer' && unitSegment(u) >= 0) workers++;
+  for (const u of run.units) {
+    if (u.kind !== 'gatherer') continue;
+    const c = unitCell(run, u);
+    if (c >= 0 && run.control[c]! > -BALANCE.territory.flip) workers++;
+  }
   const gather = workers * BALANCE.human.gather;
-  return { main, ground, springs, gather, total: main + ground + springs + gather };
+  return { main, ground, sites, gather, total: main + ground + sites + gather };
 }
 
 /** Would one more of this unit still be fed? */

@@ -38,8 +38,10 @@ export interface UnitDef {
   tags: Tag[];
   /** Damage multipliers by the target's tag. */
   bonus: Partial<Record<Tag, number>>;
-  /** Ground pushed per second while standing on someone else's stretch. */
+  /** Control pushed per second on the cell it stands on (a cell flips at ±50 of ±100). */
   claim: number;
+  /** How far it sees through the fog, in cells. */
+  sight: number;
   projectile?: ProjectileKind;
   /** Area hits: radius in px and the share of damage dealt to everything else inside it. */
   splash?: { radius: number; share: number };
@@ -73,7 +75,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 4,
     tags: ['swarm'],
     bonus: { building: 2 },
-    claim: 3,
+    claim: 10,
+    sight: 2.5,
   }),
   elk: nature({
     id: 'elk',
@@ -90,7 +93,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 8,
     tags: ['big'],
     bonus: {},
-    claim: 3,
+    claim: 8,
+    sight: 3.5,
     special: 'charge',
   }),
   mammoth: nature({
@@ -108,7 +112,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 13,
     tags: ['big'],
     bonus: { building: 2 },
-    claim: 6,
+    claim: 16,
+    sight: 3,
     splash: { radius: 16, share: 0.5 },
     special: 'stomp',
   }),
@@ -127,7 +132,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 7,
     tags: ['beast'],
     bonus: { ranged: 1.5 },
-    claim: 2,
+    claim: 6,
+    sight: 4,
     special: 'pack',
   }),
   sabertooth: nature({
@@ -145,7 +151,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 8,
     tags: ['beast'],
     bonus: {},
-    claim: 2,
+    claim: 6,
+    sight: 3.5,
     special: 'execute',
   }),
   bear: nature({
@@ -163,7 +170,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 10,
     tags: ['beast'],
     bonus: {},
-    claim: 3,
+    claim: 8,
+    sight: 3,
     special: 'thick',
   }),
 
@@ -181,7 +189,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 5,
     tags: ['person'],
     bonus: {},
-    claim: 4,
+    claim: 12,
+    sight: 3,
     special: 'gather',
     bounty: 3,
   }),
@@ -199,7 +208,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 5,
     tags: ['person'],
     bonus: { beast: 1.75 },
-    claim: 2,
+    claim: 5,
+    sight: 3,
     bounty: 5,
   }),
   javelin: human({
@@ -216,7 +226,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 5,
     tags: ['person', 'ranged'],
     bonus: { big: 1.5 },
-    claim: 2,
+    claim: 5,
+    sight: 3,
     projectile: 'javelin',
     bounty: 5,
   }),
@@ -234,7 +245,8 @@ export const UNITS: Record<UnitId, UnitDef> = {
     r: 5,
     tags: ['person'],
     bonus: { swarm: 2.5 },
-    claim: 2,
+    claim: 5,
+    sight: 3,
     projectile: 'fire',
     splash: { radius: 18, share: 1 },
     bounty: 6,

@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { BuildingCard, Panel, Toasts, TopBar } from './hud.tsx';
+import { Minimap } from './minimap.tsx';
 import { Modals } from './modals.tsx';
+import { mapRect } from './store.ts';
 import type { Insets } from '../pixel/scene.ts';
 
 /** Portrait or narrow screens put the panel under the map; landscape ones beside it. */
@@ -36,6 +38,12 @@ export function App({ onInsets }: { onInsets: (i: Insets) => void }) {
       if (key !== last) {
         last = key;
         onInsets(insets);
+        mapRect.value = {
+          x: insets.left,
+          y: insets.top,
+          w: window.innerWidth - insets.left - insets.right,
+          h: window.innerHeight - insets.top - insets.bottom,
+        };
       }
     };
     const ro = new ResizeObserver(measure);
@@ -53,6 +61,7 @@ export function App({ onInsets }: { onInsets: (i: Insets) => void }) {
       <TopBar />
       <Panel />
       <BuildingCard />
+      <Minimap />
       <Toasts />
       <Modals />
     </div>

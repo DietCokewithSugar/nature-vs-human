@@ -17,10 +17,14 @@ export const frame = signal(0);
 export const tab = signal<Tab>('build');
 export const modal = signal<ModalId>(null);
 export const toasts = signal<Toast[]>([]);
-/** The pad picked on the map (the build list then builds there). */
-export const selectedPad = signal<number | null>(null);
-/** A building kind picked first: the next pad tapped gets it. */
+/** The cell picked on the map (the build list then builds there). */
+export const selectedCell = signal<number | null>(null);
+/** A building kind picked first: the next cell clicked gets it. */
 export const placing = signal<NatureBuildingId | null>(null);
+/** The next left click plants a rally flag. */
+export const flagMode = signal(false);
+/** The screen rect the map is shown in, CSS px (the UI's panels take the rest). */
+export const mapRect = signal({ x: 0, y: 0, w: 0, h: 0 });
 /** The building whose card is open. */
 export const selectedBuilding = signal<number | null>(null);
 
@@ -48,10 +52,14 @@ export interface AppContext {
   exportSave: () => string;
   importSave: (text: string) => boolean;
   resetSave: () => void;
-  /** Build a kind on a pad, or on the best pad for it when pad is null. */
-  build: (kind: NatureBuildingId, pad: number | null) => boolean;
+  /** Build a kind on a cell, or on the best cell for it when cell is null. */
+  build: (kind: NatureBuildingId, cell: number | null) => boolean;
+  /** Back to the mother tree. */
   recenter: () => void;
-  /** Where a building / pad is on screen, for pop-overs. */
+  /** The camera: what part of the map is on screen (map px), and moving it. */
+  viewRect: () => { x0: number; y0: number; x1: number; y1: number };
+  centerOn: (x: number, y: number) => void;
+  /** Where a building is on screen, for pop-overs. */
   buildingScreen: (id: number) => { x: number; y: number; top: number } | null;
   leaderboard: import('../data/leaderboard.ts').Leaderboard;
   sfx: import('./sfx.ts').Sfx;

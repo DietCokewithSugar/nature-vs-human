@@ -1,10 +1,12 @@
 import { BALANCE } from '../config/balance.ts';
 import { BUILDINGS } from '../config/buildings.ts';
 import { CHARGE, EXECUTE, PACK, THICK, UNITS, counterMult } from '../config/units.ts';
-import { LANE_HALF, LANE_Y, MAINS, SEGMENTS, SEG_W, FIELD_X0, forward, inEnemyHome, inHome, laneAt, segmentAt } from '../map/layout.ts';
+import { T, cellAt } from '../map/grid.ts';
+import type { Nav } from '../map/nav.ts';
 import type { Building, Projectile, Unit } from '../state.ts';
 import type { BuildingId, ProjectileKind, Side, Tag, UnitId } from '../types.ts';
-import { isUnit, segOwner, type Ctx } from './ctx.ts';
+import { buildingRadius, isUnit, mapOf, navOf, ownerOf, type Ctx } from './ctx.ts';
+import { chooseGoal, countCrowd, goalDone, goalPoint } from './march.ts';
 import { towerDmg, unitAtk, unitSpeed } from './stats.ts';
 
 type Entity = Unit | Building;
@@ -12,9 +14,11 @@ type Entity = Unit | Building;
 const PROJECTILE_SPEED: Record<ProjectileKind, number> = { spear: 170, javelin: 150, cone: 120, fire: 90 };
 /** Gatherers only fight what comes right up to them. */
 const GATHERER_AGGRO = 26;
+/** Dense forest slows anyone who doesn't hold it. */
+const FOREST_SLOW = 0.75;
 
 function radiusOf(e: Entity): number {
-  return isUnit(e) ? UNITS[e.kind].r : e.pad < 0 ? MAINS[e.side].r : 14;
+  return isUnit(e) ? UNITS[e.kind].r : buildingRadius(e.kind);
 }
 
 function tagsOf(e: Entity): readonly Tag[] {
@@ -25,17 +29,6 @@ function dist(ax: number, ay: number, bx: number, by: number): number {
   return Math.hypot(ax - bx, ay - by);
 }
 
-function inField(u: Unit): boolean {
-  return segmentAt(u.x) >= 0;
-}
-
-/** Can unit u fight entity e where it stands? In the field only things in its own lane count. */
-function reachableLane(u: Unit, e: Entity): boolean {
-  if (!inField(u)) return true;
-  if (isUnit(e)) return laneAt(e.y) === u.lane || segmentAt(e.x) < 0;
-  return e.pad < 0 || Math.abs(e.y - LANE_Y[u.lane]) <= LANE_HALF + 8;
-}
-
 function findTarget(ctx: Ctx, u: Unit): Entity | null {
   const def = UNITS[u.kind];
   const gatherer = def.special === 'gather';
@@ -44,59 +37,47 @@ function findTarget(ctx: Ctx, u: Unit): Entity | null {
   let bestD = Infinity;
   for (const v of ctx.run.units) {
     if (v.side === u.side || v.hp <= 0) continue;
+    const dx = v.x - u.x;
+    if (dx > aggro + 16 || dx < -aggro - 16) continue;
     const d = dist(u.x, u.y, v.x, v.y) - UNITS[v.kind].r;
     if (d > aggro || d >= bestD) continue;
-    if (!reachableLane(u, v)) continue;
     best = v;
     bestD = d;
   }
   if (best || gatherer) return best;
-  const deep = inEnemyHome(u.side, u.x);
   for (const b of ctx.run.buildings) {
     if (b.side === u.side || b.hp <= 0) continue;
     const d = dist(u.x, u.y, b.x, b.y) - radiusOf(b);
-    if (!deep && d > aggro) continue;
-    if (d >= bestD || !reachableLane(u, b)) continue;
+    if (d > aggro || d >= bestD) continue;
     best = b;
     bestD = d;
   }
   return best;
 }
 
-/** Where a unit with nothing to fight walks to. */
-function marchGoal(ctx: Ctx, u: Unit): [number, number] {
-  const def = UNITS[u.kind];
-  const fwd = forward(u.side);
-  const ly = LANE_Y[u.lane] + u.off;
-  if (def.special === 'gather') {
-    // Work the first stretch (from home) that isn't the humans' yet.
-    let seg = 0;
-    for (let s = SEGMENTS - 1; s >= 0; s--) {
-      if (segOwner(ctx.run, u.lane, s) !== 'human') {
-        seg = s;
-        break;
-      }
-    }
-    const x = FIELD_X0 + SEG_W * (seg + 0.5) + (u.off % 12);
-    return [x, ly];
-  }
-  if (inEnemyHome(u.side, u.x)) {
-    const main = MAINS[u.side === 'nature' ? 'human' : 'nature'];
-    return [main.x, main.y];
-  }
-  if (inHome(u.side, u.x) && Math.abs(u.y - ly) > 3) return [u.x + fwd * 6, ly];
-  return [u.x + fwd * 40, ly];
-}
-
-function moveToward(u: Unit, gx: number, gy: number, step: number): void {
-  const dx = gx - u.x;
-  const dy = gy - u.y;
+/** Step towards a point, round water and volcanoes; never into them. */
+function walk(nav: Nav, u: Unit, gx: number, gy: number, step: number): void {
+  const [wx, wy] = nav.waypoint(u.x, u.y, gx, gy);
+  const dx = wx - u.x;
+  const dy = wy - u.y;
   const d = Math.hypot(dx, dy);
   if (d < 0.5) return;
   const k = Math.min(1, step / d);
-  u.x += dx * k;
-  u.y += dy * k;
+  const nx = u.x + dx * k;
+  const ny = u.y + dy * k;
+  if (nav.passableAt(nx, ny)) {
+    u.x = nx;
+    u.y = ny;
+  } else if (nav.passableAt(nx, u.y)) u.x = nx;
+  else if (nav.passableAt(u.x, ny)) u.y = ny;
   if (Math.abs(dx) > 0.5) u.face = dx > 0 ? 1 : -1;
+}
+
+/** Forest that isn't yours slows you down. */
+function terrainSpeed(ctx: Ctx, u: Unit): number {
+  const c = cellAt(u.x, u.y);
+  if (c < 0 || mapOf(ctx.run).terrain[c] !== T.forest) return 1;
+  return ownerOf(ctx.run.control[c]!) === u.side ? 1 : FOREST_SLOW;
 }
 
 /** Damage after the attacker's specials against this target. */
@@ -170,25 +151,29 @@ function shoot(ctx: Ctx, side: Side, kind: ProjectileKind, from: UnitId | Buildi
 
 export function stepUnits(ctx: Ctx, dt: number): void {
   const run = ctx.run;
+  const nav = navOf(run);
+  countCrowd(ctx);
+  const rethink = BALANCE.march.rethink;
   for (const u of run.units) {
     if (u.hp <= 0) continue;
     const def = UNITS[u.kind];
     u.cd -= dt;
     u.look -= dt;
+    u.rethink -= dt;
     let t = u.target ? ctx.byId.get(u.target) : undefined;
     if (t && t.hp <= 0) t = undefined;
     if (u.look <= 0 || !t) {
       u.look = BALANCE.retarget;
-      const keep = t && isUnit(t) && dist(u.x, u.y, t.x, t.y) <= BALANCE.aggro * 1.3 && reachableLane(u, t);
+      const keep = t && isUnit(t) && dist(u.x, u.y, t.x, t.y) <= BALANCE.aggro * 1.3;
       if (!keep) t = findTarget(ctx, u) ?? undefined;
     }
     u.target = t ? t.id : 0;
-    const speed = unitSpeed(u.kind, ctx.mods) * (u.hungry ? 0.8 : 1);
+    const speed = unitSpeed(u.kind, ctx.mods) * (u.hungry ? 0.8 : 1) * terrainSpeed(ctx, u);
     if (t) {
       const ranged = def.range > 20;
       const reach = (ranged ? def.range : def.r + def.range) + radiusOf(t);
       const d = dist(u.x, u.y, t.x, t.y);
-      if (d > reach) moveToward(u, t.x, t.y, speed * dt);
+      if (d > reach) walk(nav, u, t.x, t.y, speed * dt);
       else {
         u.face = t.x >= u.x ? 1 : -1;
         if (u.cd <= 0) {
@@ -208,46 +193,53 @@ export function stepUnits(ctx: Ctx, dt: number): void {
           }
         }
       }
-    } else {
-      const [gx, gy] = marchGoal(ctx, u);
-      moveToward(u, gx, gy, speed * dt);
+      continue;
     }
-    // Stay inside the lane while in the field.
-    if (inField(u)) {
-      const ly = LANE_Y[u.lane];
-      const lim = LANE_HALF - def.r;
-      if (u.y < ly - lim) u.y = ly - lim;
-      if (u.y > ly + lim) u.y = ly + lim;
+    // Nothing to fight: on to its goal, choosing a new one now and then.
+    if (u.rethink <= 0 || (u.rethink < rethink - 0.4 && goalDone(ctx, u))) {
+      u.goal = chooseGoal(ctx, u);
+      u.rethink = rethink * (0.8 + ((u.id * 7) % 5) * 0.1);
     }
+    if (u.goal < 0) continue;
+    const [gx, gy] = goalPoint(u);
+    if (dist(u.x, u.y, gx, gy) > 1.5) walk(nav, u, gx, gy, speed * dt);
   }
-  separate(ctx);
+  separate(ctx, nav);
 }
 
 /** Push overlapping units of the same side apart so a crowd reads as a crowd. */
-function separate(ctx: Ctx): void {
+function separate(ctx: Ctx, nav: Nav): void {
   const us = ctx.run.units;
-  for (let i = 0; i < us.length; i++) {
-    const a = us[i]!;
+  // Sort by x so only near neighbours are compared.
+  const order = us.slice().sort((a, b) => a.x - b.x);
+  for (let i = 0; i < order.length; i++) {
+    const a = order[i]!;
     if (a.hp <= 0) continue;
     const ra = UNITS[a.kind].r;
-    for (let j = i + 1; j < us.length; j++) {
-      const b = us[j]!;
+    for (let j = i + 1; j < order.length; j++) {
+      const b = order[j]!;
+      const dx = b.x - a.x;
+      if (dx > 30) break;
       if (b.hp <= 0 || b.side !== a.side) continue;
       const min = (ra + UNITS[b.kind].r) * 0.8;
-      const dx = b.x - a.x;
-      if (dx > min || dx < -min) continue;
+      if (dx > min) continue;
       const dy = b.y - a.y;
+      if (dy > min || dy < -min) continue;
       const d = Math.hypot(dx, dy);
       if (d >= min) continue;
       const push = (min - d) * 0.5;
-      // Mostly sideways: keep the column moving forward.
-      const nx = d > 0.01 ? dx / d : 0;
-      const ny = d > 0.01 ? dy / d : (i + j) % 2 ? 1 : -1;
-      a.x -= nx * push * 0.3;
-      b.x += nx * push * 0.3;
-      a.y -= ny * push;
-      b.y += ny * push;
+      const nx = d > 0.01 ? dx / d : (a.id + b.id) % 2 ? 1 : -1;
+      const ny = d > 0.01 ? dy / d : 0;
+      nudge(nav, a, -nx * push, -ny * push);
+      nudge(nav, b, nx * push, ny * push);
     }
+  }
+}
+
+function nudge(nav: Nav, u: Unit, dx: number, dy: number): void {
+  if (nav.passableAt(u.x + dx, u.y + dy)) {
+    u.x += dx;
+    u.y += dy;
   }
 }
 
@@ -256,8 +248,8 @@ export function stepTowers(ctx: Ctx, dt: number): void {
     const tower = BUILDINGS[b.kind].tower;
     if (!tower || b.progress < 1 || b.hp <= 0) continue;
     if (b.side === 'human' && ctx.run.wonAt !== null) continue;
-    b.timer -= dt;
-    if (b.timer > 0) continue;
+    b.shot -= dt;
+    if (b.shot > 0) continue;
     let best: Unit | null = null;
     let bestD = Infinity;
     for (const v of ctx.run.units) {
@@ -269,10 +261,10 @@ export function stepTowers(ctx: Ctx, dt: number): void {
       }
     }
     if (!best) {
-      b.timer = 0.2;
+      b.shot = 0.2;
       continue;
     }
-    b.timer = tower.interval;
+    b.shot = tower.interval;
     shoot(ctx, b.side, tower.projectile, b.kind, b.x, b.y - 18, best, towerDmg(b.kind, ctx.run, ctx.mods), null);
   }
 }

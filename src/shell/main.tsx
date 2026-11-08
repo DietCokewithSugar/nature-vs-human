@@ -6,14 +6,15 @@ import '../styles/game.css';
 
 import { signal } from '@preact/signals';
 import { render } from 'preact';
-import { BUILDINGS, Game, PADS, UNITS, exportSave, formatNumber, importSave, padUser, type CoreEvent, type NatureBuildingId } from '../core/index.ts';
+import { BUILDINGS, CELL, Game, UNITS, cellOwner, cxOf, cyOf, exportSave, formatNumber, importSave, type CoreEvent, type NatureBuildingId } from '../core/index.ts';
 import { Leaderboard } from '../data/leaderboard.ts';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type Settings } from '../data/storage.ts';
 import { Scene, type MapTarget } from '../pixel/scene.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
+import { HOTKEYS } from '../ui/hud.tsx';
 import { Sfx } from '../ui/sfx.ts';
-import { frame, modal, placing, pushToast, selectedBuilding, selectedPad, setApp, tab } from '../ui/store.ts';
+import { flagMode, frame, modal, placing, pushToast, selectedBuilding, selectedCell, setApp, tab } from '../ui/store.ts';
 import { GameLoop } from './loop.ts';
 
 const game = new Game(loadGame());
@@ -29,48 +30,70 @@ function save(): void {
   saveGame(game.state);
 }
 
-/** Build a kind on a pad, or wherever suits it best. */
-function build(kind: NatureBuildingId, pad: number | null): boolean {
-  const target = pad ?? game.autoPad(kind);
+/** Build a kind on a cell, or wherever suits it best. */
+function build(kind: NatureBuildingId, cell: number | null): boolean {
+  const target = cell ?? game.autoCell(kind);
   if (target === null) {
     sfx.deny();
-    pushToast({ title: COPY.build.noPad, tone: 'bad' }, 1600);
+    pushToast({ title: COPY.build.noPad, tone: 'bad' }, 1800);
     return false;
   }
   const v = game.buildCheck(target, kind);
   if (!v.ok) {
     sfx.deny();
-    pushToast({ title: COPY.build.problem[v.why], tone: 'bad' }, 1600);
+    pushToast({ title: COPY.build.problem[v.why], tone: 'bad' }, 1800);
     return false;
   }
   game.build(target, kind);
   sfx.buy();
   placing.value = null;
-  selectedPad.value = null;
+  selectedCell.value = null;
   return true;
 }
 
+function plantFlag(x: number, y: number): void {
+  if (game.placeFlag(x, y)) {
+    sfx.click();
+    pushToast({ title: COPY.flags.placed, body: COPY.flags.hint }, 2400);
+  } else {
+    sfx.deny();
+    pushToast({ title: COPY.flags.bad, tone: 'bad' }, 1600);
+  }
+  flagMode.value = false;
+}
+
 scene.onTap = (t: MapTarget) => {
+  if (flagMode.value && t.type !== 'flag') {
+    const cell = t.type === 'cell' ? t.cell : null;
+    if (cell !== null) plantFlag(cxOf(cell) * CELL + CELL / 2, cyOf(cell) * CELL + CELL / 2);
+    else flagMode.value = false;
+    return;
+  }
   switch (t.type) {
-    case 'pad': {
+    case 'cell': {
       selectedBuilding.value = null;
       if (placing.value) {
-        build(placing.value, t.pad);
+        build(placing.value, t.cell);
         return;
       }
-      if (padUser(game.run, t.pad) !== 'nature') {
-        sfx.deny();
-        pushToast({ title: COPY.build.problem.ground, tone: 'bad' }, 1600);
+      if (cellOwner(game.run, t.cell) !== 'nature') {
+        selectedCell.value = null;
         return;
       }
       sfx.click();
-      selectedPad.value = selectedPad.value === t.pad ? null : t.pad;
+      selectedCell.value = selectedCell.value === t.cell ? null : t.cell;
       tab.value = 'build';
       return;
     }
+    case 'flag':
+      if (game.removeFlag(t.id)) {
+        sfx.click();
+        pushToast({ title: COPY.flags.removed }, 1400);
+      }
+      return;
     case 'building':
       sfx.click();
-      selectedPad.value = null;
+      selectedCell.value = null;
       selectedBuilding.value = selectedBuilding.value === t.id ? null : t.id;
       return;
     case 'unit': {
@@ -79,17 +102,34 @@ scene.onTap = (t: MapTarget) => {
       return;
     }
     default:
-      selectedPad.value = null;
+      selectedCell.value = null;
       selectedBuilding.value = null;
   }
 };
 
+// Right click, as in an RTS: cancel what you're holding, otherwise send the army there (a flag).
+scene.onRightTap = (x: number, y: number) => {
+  if (placing.value || flagMode.value) {
+    placing.value = null;
+    flagMode.value = false;
+    return;
+  }
+  plantFlag(x, y);
+};
+
+let buildableAt = -1;
+let buildable: number[] = [];
 const loop = new GameLoop(game, () => {
   scene.sync(game);
-  scene.setBuildable(game.run.phase === 'battle' ? game.openPads() : [], placing.value !== null);
-  scene.selectPad(selectedPad.value);
+  // The build highlight only matters while placing; it's worked out a couple of times a second.
+  if (placing.value && game.run.time - buildableAt > 0.5) {
+    buildable = game.openCells();
+    buildableAt = game.run.time;
+  } else if (!placing.value) buildableAt = -1;
+  scene.setBuildable(placing.value ? buildable : [], placing.value);
+  scene.selectCell(selectedCell.value);
   scene.select(selectedBuilding.value);
-  if (selectedPad.value !== null && padUser(game.run, selectedPad.value) !== 'nature') selectedPad.value = null;
+  if (selectedCell.value !== null && cellOwner(game.run, selectedCell.value) !== 'nature') selectedCell.value = null;
 });
 
 const STARVE_NAME = { grass: COPY.chain.herbivores + '动物', meat: COPY.chain.predators + '动物', food: '' } as const;
@@ -99,7 +139,7 @@ game.on((e: CoreEvent) => {
   switch (e.type) {
     case 'stageStarted':
       scene.reset();
-      pushToast(COPY.toast.stage(e.stage, COPY.top.camp(e.stage)), 3800);
+      pushToast(COPY.toast.stage(e.stage, COPY.eras[e.era]!, e.opened), 4200);
       sfx.era();
       save();
       break;
@@ -123,19 +163,20 @@ game.on((e: CoreEvent) => {
       pushToast({ ...COPY.toast.won(e.stage), tone: 'good' }, 2400);
       sfx.evolve();
       placing.value = null;
-      selectedPad.value = null;
+      selectedCell.value = null;
       void leaderboard.submit(game.state, true);
       break;
     case 'runEnded':
       sfx.deny();
       placing.value = null;
-      selectedPad.value = null;
+      selectedCell.value = null;
       selectedBuilding.value = null;
       save();
       void leaderboard.submit(game.state, true);
       break;
     case 'runStarted':
       scene.reset();
+      scene.home();
       save();
       break;
     case 'built':
@@ -172,7 +213,9 @@ setApp({
     location.reload();
   },
   build,
-  recenter: () => scene.recenter(),
+  recenter: () => scene.home(),
+  viewRect: () => scene.viewRect(),
+  centerOn: (x, y) => scene.centerOn(x, y),
   buildingScreen: (id) => scene.buildingScreen(id),
   leaderboard,
   sfx,
@@ -182,10 +225,35 @@ render(<App onInsets={(i) => scene.setInsets(i)} />, document.getElementById('ui
 
 window.addEventListener('resize', () => scene.resize());
 window.addEventListener('keydown', (e) => {
+  const t = e.target as HTMLElement | null;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return;
   if (e.key === 'Escape') {
     placing.value = null;
-    selectedPad.value = null;
+    flagMode.value = false;
+    selectedCell.value = null;
     selectedBuilding.value = null;
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || modal.value !== null || game.run.phase !== 'battle') return;
+  if (e.key === ' ' || e.key.toLowerCase() === 'h') {
+    e.preventDefault();
+    scene.home();
+    return;
+  }
+  if (e.key.toLowerCase() === 'f') {
+    flagMode.value = !flagMode.value;
+    placing.value = null;
+    return;
+  }
+  const n = Number(e.key);
+  if (Number.isInteger(n) && n >= 1 && n <= HOTKEYS.length) {
+    const kind = HOTKEYS[n - 1]!;
+    if (selectedCell.value !== null) build(kind, selectedCell.value);
+    else {
+      placing.value = placing.value === kind ? null : kind;
+      flagMode.value = false;
+      tab.value = 'build';
+    }
   }
 });
 document.addEventListener('visibilitychange', () => {
@@ -215,5 +283,4 @@ if (import.meta.env.DEV) {
   const w = window as unknown as Record<string, unknown>;
   w.__game = game;
   w.__scene = scene;
-  w.__pads = PADS;
 }
