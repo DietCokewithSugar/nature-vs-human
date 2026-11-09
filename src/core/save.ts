@@ -38,6 +38,17 @@ function parseRun(raw: unknown): RunState | null {
   if (typeof r.phase !== 'string' || !['battle', 'pick', 'over'].includes(r.phase)) return null;
   if (!r.levels || typeof r.levels !== 'object' || !r.human || typeof r.human !== 'object') return null;
   for (const k of ['stage', 'time', 'stageTime', 'essence', 'nextId', 'rng', 'mapSeed', 'era']) if (typeof r[k] !== 'number' || !Number.isFinite(r[k])) return null;
+  // Saves from before predators hunted: everyone has just eaten.
+  for (const raw of r.units as unknown[]) {
+    const u = obj(raw);
+    u.fedAt = num(u.fedAt, r.time as number);
+    u.fullUntil = num(u.fullUntil);
+    u.hunt = num(u.hunt);
+    u.huntUntil = num(u.huntUntil);
+  }
+  const stats = obj(r.stats);
+  stats.eaten = num(stats.eaten);
+  r.stats = stats;
   return r as unknown as RunState;
 }
 

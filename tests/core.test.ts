@@ -15,6 +15,10 @@ import {
   cellOwner,
   counterMult,
   createState,
+  famished,
+  mealMult,
+  predatorsOf,
+  trophicOf,
   cxOf,
   cyOf,
   deserialize,
@@ -35,6 +39,7 @@ import {
   type GameState,
   type NatureBuildingId,
   type Unit,
+  type UnitId,
 } from '../src/core/index.ts';
 
 const SEEDS = [1, 7, 42, 99, 20261108];
@@ -323,6 +328,154 @@ describe('food chain', () => {
   });
 });
 
+describe('predators and prey', () => {
+  /** A unit standing still near the mother tree (it won't wander off to a goal). */
+  function put(g: Game, kind: UnitId, dx: number, dy = 0): Unit {
+    const tree = mainOf(g.run, 'nature')!;
+    const maxHp = unitMaxHp(kind, g.run, g.mods);
+    const u: Unit = {
+      id: g.run.nextId++,
+      kind,
+      side: UNITS[kind].side,
+      x: tree.x + 40 + dx,
+      y: tree.y + 24 + dy,
+      home: tree.id,
+      goal: -1,
+      rethink: 1e9,
+      ox: 0,
+      oy: 0,
+      hp: maxHp,
+      maxHp,
+      target: 0,
+      cd: 0,
+      look: 0,
+      fought: -99,
+      hitAt: -99,
+      struckAt: -99,
+      face: 1,
+      hungry: false,
+      fedAt: g.run.time,
+      fullUntil: 0,
+      hunt: 0,
+      huntUntil: 0,
+    };
+    expect(openCell(g.run, Math.floor(u.y / CELL) * GRID + Math.floor(u.x / CELL))).toBe(true);
+    g.run.units.push(u);
+    return u;
+  }
+
+  it('sorts every species into the food chain', () => {
+    expect(UNITS.wolf.prey).toEqual(['elk']);
+    expect(predatorsOf('elk')).toEqual(['wolf', 'sabertooth']);
+    expect(predatorsOf('ant')).toEqual(['bear']);
+    expect(predatorsOf('mammoth')).toEqual([]);
+    expect(trophicOf('ant')).toBe('provider');
+    expect(trophicOf('elk')).toBe('provider');
+    expect(trophicOf('mammoth')).toBe('grazer');
+    expect(trophicOf('wolf')).toBe('middle');
+    expect(trophicOf('sabertooth')).toBe('apex');
+    expect(trophicOf('bear')).toBe('apex');
+    expect(trophicOf('spearman')).toBeNull();
+    // Only nature's own animals are prey.
+    for (const id of Object.keys(UNITS) as UnitId[]) for (const p of UNITS[id].prey ?? []) expect(UNITS[p].side).toBe('nature');
+  });
+
+  it('a hurt predator eats nearby prey, the wounded first, and heals', () => {
+    const g = fresh();
+    quietHumans(g);
+    finish(g, 'meadow');
+    const events: CoreEvent[] = [];
+    g.on((e) => events.push(e));
+    const wolf = put(g, 'wolf', 0);
+    wolf.hp = wolf.maxHp * 0.4;
+    wolf.fedAt = g.run.time - BALANCE.hunt.digest - 1;
+    const healthy = put(g, 'elk', 24);
+    const wounded = put(g, 'elk', -20, 30);
+    wounded.hp = wounded.maxHp * 0.3;
+    // Enough meat in store that the one deer left can't leave the wolf short.
+    g.run.meatStock = BALANCE.nature.minStock;
+    g.advance(4);
+    expect(g.run.units.includes(wounded)).toBe(false);
+    expect(g.run.units.includes(healthy)).toBe(true);
+    expect(wolf.hp).toBeGreaterThan(wolf.maxHp * 0.95);
+    expect(g.run.time).toBeLessThan(wolf.fullUntil);
+    expect(mealMult(g.run, wolf)).toBe(BALANCE.hunt.fullAtk);
+    expect(g.run.stats.eaten).toBe(1);
+    expect(g.run.stats.losses).toBe(0);
+    expect(events.some((e) => e.type === 'eaten' && e.kind === 'wolf' && e.prey === 'elk')).toBe(true);
+    expect(events.some((e) => e.type === 'death' && e.id === wounded.id && e.cause === 'eaten')).toBe(true);
+    // Fed and whole: it leaves the other deer alone.
+    g.advance(5);
+    expect(g.run.units.includes(healthy)).toBe(true);
+  });
+
+  it('eats on an empty stomach too, but only its own prey: nobody eats mammoths', () => {
+    const g = fresh();
+    quietHumans(g);
+    finish(g, 'meadow');
+    finish(g, 'meadow');
+    const bear = put(g, 'bear', 0);
+    const mammoth = put(g, 'mammoth', 30);
+    const elk = put(g, 'elk', -30);
+    const ant = put(g, 'ant', 0, 40);
+    g.advance(BALANCE.hunt.appetite + 4);
+    expect(g.run.units.includes(ant)).toBe(false);
+    expect(g.run.units.includes(mammoth)).toBe(true);
+    expect(g.run.units.includes(elk)).toBe(true);
+    expect(bear.fedAt).toBeGreaterThan(BALANCE.hunt.appetite - 1);
+  });
+
+  it('goes hungry with no prey about, weaker and slower, then wastes away', () => {
+    const g = fresh();
+    quietHumans(g);
+    finish(g, 'meadow');
+    finish(g, 'meadow');
+    const events: CoreEvent[] = [];
+    g.on((e) => events.push(e));
+    const saber = put(g, 'sabertooth', 0);
+    put(g, 'mammoth', 30);
+    g.advance(BALANCE.hunt.hungryAfter + 1);
+    expect(famished(g.run, saber)).toBe(true);
+    expect(saber.hungry).toBe(true);
+    expect(mealMult(g.run, saber)).toBe(BALANCE.hunt.hungryAtk);
+    expect(events.some((e) => e.type === 'noPrey' && e.kind === 'sabertooth')).toBe(true);
+    expect(saber.hp).toBeCloseTo(saber.maxHp, 5);
+    g.advance(BALANCE.hunt.starveAfter - BALANCE.hunt.hungryAfter + 10);
+    expect(saber.hp).toBeLessThan(saber.maxHp * 0.95);
+    // A deer turns up: it eats and is no longer hungry.
+    put(g, 'elk', -30);
+    g.advance(4);
+    expect(saber.hungry).toBe(false);
+    expect(g.run.stats.eaten).toBe(1);
+  });
+
+  it('a badly hurt predator leaves the fight to eat', () => {
+    const g = fresh();
+    quietHumans(g);
+    const events: CoreEvent[] = [];
+    g.on((e) => events.push(e));
+    const wolf = put(g, 'wolf', 0);
+    wolf.hp = wolf.maxHp * 0.3;
+    wolf.fedAt = g.run.time - BALANCE.hunt.digest - 1;
+    const foe = put(g, 'spearman', 60);
+    foe.rethink = 1e9;
+    put(g, 'elk', -26);
+    g.advance(1.5);
+    const meal = events.find((e) => e.type === 'eaten' && e.id === wolf.id);
+    expect(meal?.type === 'eaten' && meal.heal).toBeGreaterThan(wolf.maxHp * 0.6);
+  });
+
+  it('humans are never hungry for prey and hit as hard either way', () => {
+    const g = fresh();
+    quietHumans(g);
+    const man = put(g, 'gatherer', 0);
+    man.fedAt = -1e6;
+    g.advance(1);
+    expect(famished(g.run, man)).toBe(false);
+    expect(mealMult(g.run, man)).toBe(1);
+  });
+});
+
 describe('combat', () => {
   it('knows its counters', () => {
     expect(counterMult(UNITS.torch, UNITS.ant.tags)).toBe(2.5);
@@ -531,6 +684,28 @@ describe('determinism and saves', () => {
     const g = new Game(back);
     g.advance(5);
     expect(g.run.time).toBeGreaterThan(state.run.time);
+  });
+
+  it('fills in what saves from before hunting lack', () => {
+    const state = play(3);
+    const raw = JSON.parse(JSON.stringify(serialize(state)));
+    for (const u of raw.run.units) {
+      delete u.fedAt;
+      delete u.fullUntil;
+      delete u.hunt;
+      delete u.huntUntil;
+    }
+    delete raw.run.stats.eaten;
+    const back = deserialize(raw);
+    expect(back.run.units.length).toBeGreaterThan(0);
+    for (const u of back.run.units) {
+      expect(u.fedAt).toBe(state.run.time);
+      expect(u.hunt).toBe(0);
+    }
+    expect(back.run.stats.eaten).toBe(0);
+    const g = new Game(back);
+    g.advance(5);
+    expect(g.run.units.every((u) => Number.isFinite(u.hp))).toBe(true);
   });
 
   it('starts afresh from an old-version save', () => {

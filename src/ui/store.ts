@@ -3,7 +3,7 @@ import type { Game, NatureBuildingId } from '../core/index.ts';
 import type { Settings } from '../data/storage.ts';
 
 export type Tab = 'build' | 'evolve';
-export type ModalId = 'help' | 'settings' | 'leaderboard' | 'giveUp' | null;
+export type ModalId = 'help' | 'settings' | 'leaderboard' | 'giveUp' | 'food' | null;
 
 export interface Toast {
   id: number;

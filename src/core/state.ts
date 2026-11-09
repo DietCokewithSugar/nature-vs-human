@@ -34,7 +34,14 @@ export interface Unit {
   hitAt: number;
   struckAt: number;
   face: 1 | -1;
+  /** Short of food: its layer of the food chain ran out, or (predators) no meal for a long while. */
   hungry: boolean;
+  /** Predators: run time of the last meal (birth counts), and until when it's full. */
+  fedAt: number;
+  fullUntil: number;
+  /** The prey it's chasing (0: none); while chasing, when it gives up; otherwise when it may look again. */
+  hunt: number;
+  huntUntil: number;
 }
 
 export interface Building {
@@ -102,6 +109,8 @@ export interface RunStats {
   kills: number;
   losses: number;
   starved: number;
+  /** Nature's animals eaten by its own predators. */
+  eaten: number;
   built: number;
   razed: number;
   lost: number;
@@ -187,7 +196,7 @@ export function startControl(mapSeed: number): number[] {
 }
 
 export function emptyStats(): RunStats {
-  return { kills: 0, losses: 0, starved: 0, built: 0, razed: 0, lost: 0 };
+  return { kills: 0, losses: 0, starved: 0, eaten: 0, built: 0, razed: 0, lost: 0 };
 }
 
 /** A blank run; Game.startRun lays out the buildings. */

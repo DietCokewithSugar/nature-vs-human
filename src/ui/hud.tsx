@@ -27,6 +27,7 @@ import {
 } from '../core/index.ts';
 import { Bar, Essence, Pic, fmt } from './common.tsx';
 import { COPY, FOOD_NAME } from './copy.ts';
+import { ChainLine, chainText } from './foodweb.tsx';
 import { app, flagMode, frame, modal, placing, pushToast, selectedBuilding, selectedCell, tab, toasts } from './store.ts';
 
 // ── Top bar: the stage and the humans ───────────────────────────
@@ -184,7 +185,7 @@ function FoodChain() {
         <span class="chain-label">{label}</span>
         <span class="chain-units">
           {units.map((u) => (
-            <span class="chain-unit" data-none={u.n === 0 || undefined} title={UNITS[u.id].name}>
+            <span class="chain-unit" data-none={u.n === 0 || undefined} title={`${UNITS[u.id].name}：${chainText(u.id)}`}>
               <Pic k={`unit/${u.id}/walk0`} scale={1} />
               <b class="num">{u.n}</b>
             </span>
@@ -215,6 +216,9 @@ function FoodChain() {
         </span>
         <small class="chain-note">{COPY.chain.help}</small>
       </div>
+      <button type="button" class="btn plain small chain-web" onClick={() => (modal.value = 'food')}>
+        {COPY.food.open}
+      </button>
     </section>
   );
 }
@@ -229,7 +233,11 @@ const GROUPS: { key: keyof typeof COPY.build.groups; kinds: NatureBuildingId[] }
 /** Building kinds in hotkey order (1 … 8). */
 export const HOTKEYS: NatureBuildingId[] = GROUPS.flatMap((g) => g.kinds);
 
+// The lists below read signals (placing, the selected cell), so the signals library only
+// re-renders them when those change; reading `frame` keeps prices, "can afford" and the food
+// chain warnings current as the game runs.
 function BuildList() {
+  frame.value;
   const game = app.game;
   const run = game.run;
   const cell = selectedCell.value;
@@ -278,6 +286,7 @@ function buildInfo(kind: NatureBuildingId): string {
 }
 
 function BuildCard({ kind, cell }: { kind: NatureBuildingId; cell: number | null }) {
+  frame.value;
   const game = app.game;
   const def = BUILDINGS[kind];
   const cost = game.buildCost(kind);
@@ -306,6 +315,7 @@ function BuildCard({ kind, cell }: { kind: NatureBuildingId; cell: number | null
         <b>{def.name}</b>
         <small>{def.makes ? COPY.build.makes(UNITS[def.makes].name) : def.role}</small>
         <small class="muted">{buildInfo(kind)}</small>
+        {def.makes && <ChainLine id={def.makes} />}
       </span>
       <span class="price">
         <Essence v={cost} />
@@ -332,6 +342,7 @@ function levelEffect(id: LevelId): string {
 }
 
 function EvolveList() {
+  frame.value;
   const game = app.game;
   return (
     <div class="evolve">
@@ -400,6 +411,11 @@ export function BuildingCard() {
       <p>
         {main ? (b.side === 'nature' ? COPY.building.main : COPY.building.lodgeMain) : def.makes ? `${COPY.build.makes(UNITS[def.makes].name)} · ${b.side === 'nature' ? COPY.building.march(game.run.flags.length) : ''}` : def.role}
       </p>
+      {b.side === 'nature' && def.makes && !main && (
+        <p>
+          <ChainLine id={def.makes} />
+        </p>
+      )}
       {b.blocked && b.side === 'nature' && <p class="warn">{COPY.building.blocked[b.blocked]}</p>}
       {b.side === 'human' && !main && <p class="muted">{COPY.building.humanSide}</p>}
       {b.side === 'nature' && !main && (

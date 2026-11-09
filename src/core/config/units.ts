@@ -1,4 +1,4 @@
-import type { Diet, HumanUnitId, NatureUnitId, ProjectileKind, Side, Tag, UnitId } from '../types.ts';
+import { NATURE_UNIT_IDS, type Diet, type HumanUnitId, type NatureUnitId, type ProjectileKind, type Side, type Tag, type UnitId } from '../types.ts';
 
 /** Special rules a unit may have on top of its counters. */
 export type Special =
@@ -46,6 +46,8 @@ export interface UnitDef {
   /** Area hits: radius in px and the share of damage dealt to everything else inside it. */
   splash?: { radius: number; share: number };
   special?: Special;
+  /** Predators: the animals of nature's own they hunt when hungry or hurt (see BALANCE.hunt). */
+  prey?: NatureUnitId[];
   /** 生机 nature gets for killing it (human units). */
   bounty: number;
 }
@@ -135,6 +137,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
     claim: 6,
     sight: 4,
     special: 'pack',
+    prey: ['elk'],
   }),
   sabertooth: nature({
     id: 'sabertooth',
@@ -154,6 +157,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
     claim: 6,
     sight: 3.5,
     special: 'execute',
+    prey: ['elk', 'wolf'],
   }),
   bear: nature({
     id: 'bear',
@@ -173,6 +177,7 @@ export const UNITS: Record<UnitId, UnitDef> = {
     claim: 8,
     sight: 3,
     special: 'thick',
+    prey: ['ant'],
   }),
 
   gatherer: human({
@@ -256,6 +261,25 @@ export const UNITS: Record<UnitId, UnitDef> = {
 export const HERBIVORES: readonly NatureUnitId[] = ['ant', 'elk', 'mammoth'];
 export const PREDATORS: readonly NatureUnitId[] = ['wolf', 'sabertooth', 'bear'];
 export const SOLDIERS: readonly HumanUnitId[] = ['spearman', 'javelin', 'torch'];
+
+/**
+ * Where a nature species sits in the food chain: providers are hunted and hunt nothing;
+ * grazers are hunted by nobody; middle predators hunt and are hunted; apex predators only hunt.
+ */
+export type Trophic = 'provider' | 'grazer' | 'middle' | 'apex';
+
+/** The species that hunt this one. */
+export function predatorsOf(id: UnitId): NatureUnitId[] {
+  return NATURE_UNIT_IDS.filter((p) => UNITS[p].prey?.includes(id as NatureUnitId));
+}
+
+export function trophicOf(id: UnitId): Trophic | null {
+  if (UNITS[id].side !== 'nature') return null;
+  const hunts = (UNITS[id].prey?.length ?? 0) > 0;
+  const hunted = predatorsOf(id).length > 0;
+  if (hunts) return hunted ? 'middle' : 'apex';
+  return hunted ? 'provider' : 'grazer';
+}
 
 /** The damage multiplier an attacker gets against a target with these tags (the best match). */
 export function counterMult(attacker: UnitDef, targetTags: readonly Tag[]): number {

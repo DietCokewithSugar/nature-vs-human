@@ -6,12 +6,13 @@ import '../styles/game.css';
 
 import { signal } from '@preact/signals';
 import { render } from 'preact';
-import { BUILDINGS, CELL, Game, UNITS, cellOwner, cxOf, cyOf, exportSave, formatNumber, importSave, type CoreEvent, type NatureBuildingId } from '../core/index.ts';
+import { BUILDINGS, CELL, Game, UNITS, cellOwner, cxOf, cyOf, exportSave, formatNumber, importSave, isFull, trophicOf, type CoreEvent, type NatureBuildingId } from '../core/index.ts';
 import { Leaderboard } from '../data/leaderboard.ts';
 import { clearGame, loadGame, loadSettings, saveGame, saveSettings, type Settings } from '../data/storage.ts';
 import { Scene, type MapTarget } from '../pixel/scene.ts';
 import { App } from '../ui/App.tsx';
 import { COPY } from '../ui/copy.ts';
+import { chainText } from '../ui/foodweb.tsx';
 import { HOTKEYS } from '../ui/hud.tsx';
 import { Sfx } from '../ui/sfx.ts';
 import { flagMode, frame, modal, placing, pushToast, selectedBuilding, selectedCell, setApp, tab } from '../ui/store.ts';
@@ -98,7 +99,11 @@ scene.onTap = (t: MapTarget) => {
       return;
     case 'unit': {
       const u = game.run.units.find((x) => x.id === t.id);
-      if (u) pushToast({ title: UNITS[u.kind].name, body: UNITS[u.kind].role }, 1600);
+      if (!u) return;
+      const level = trophicOf(u.kind);
+      const belly = u.side === 'nature' ? (u.hungry ? COPY.food.hungryNow : isFull(game.run, u) ? COPY.food.fullNow : '') : '';
+      const body = [UNITS[u.kind].role, level ? `${COPY.food.level[level]} · ${chainText(u.kind)}` : '', belly].filter(Boolean).join('\n');
+      pushToast({ title: UNITS[u.kind].name, body }, 2600);
       return;
     }
     default:
@@ -132,6 +137,8 @@ const loop = new GameLoop(game, () => {
   if (selectedCell.value !== null && cellOwner(game.run, selectedCell.value) !== 'nature') selectedCell.value = null;
 });
 
+const noPreyAt = new Map<string, number>();
+
 const STARVE_NAME = { grass: COPY.chain.herbivores + '动物', meat: COPY.chain.predators + '动物', food: '' } as const;
 
 game.on((e: CoreEvent) => {
@@ -152,6 +159,15 @@ game.on((e: CoreEvent) => {
         sfx.deny();
       }
       break;
+    case 'noPrey': {
+      // Once in a while per species: it's a nudge, not an alarm.
+      const now = Date.now();
+      if ((noPreyAt.get(e.kind) ?? 0) > now) break;
+      noPreyAt.set(e.kind, now + 45_000);
+      const prey = (UNITS[e.kind].prey ?? []).map((p) => UNITS[p].name).join(COPY.food.or);
+      pushToast({ ...COPY.toast.noPrey(UNITS[e.kind].name, prey), tone: 'bad' }, 4000);
+      break;
+    }
     case 'destroyed':
       if (e.side === 'nature' && BUILDINGS[e.kind].main !== true) {
         pushToast({ ...COPY.toast.lost(BUILDINGS[e.kind].name), tone: 'bad' }, 2600);

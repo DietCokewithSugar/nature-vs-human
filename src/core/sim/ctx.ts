@@ -22,6 +22,8 @@ export interface Ctx {
   onCell: Map<number, Building>;
   /** Cells nature can see right now (1), recomputed every step; not saved. */
   visible: Uint8Array;
+  /** Units eaten by a predator this step (so their death is told as such). */
+  eaten: Set<number>;
 }
 
 export function rand(ctx: Ctx): number {
@@ -166,6 +168,10 @@ export function addUnit(ctx: Ctx, kind: UnitId, home: number, x: number, y: numb
     struckAt: -99,
     face: def.side === 'nature' ? 1 : -1,
     hungry: false,
+    fedAt: ctx.run.time,
+    fullUntil: 0,
+    hunt: 0,
+    huntUntil: 0,
   };
   ctx.run.units.push(u);
   ctx.byId.set(u.id, u);

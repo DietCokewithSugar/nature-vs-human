@@ -5,6 +5,7 @@ import { CELLS, holdable } from '../map/grid.ts';
 import type { RunState } from '../state.ts';
 import type { Diet, Side, UnitId } from '../types.ts';
 import { mapOf, unitCell, type Ctx } from './ctx.ts';
+import { famished } from './prey.ts';
 import { meadowGrass, motherIncome, unitEat, unitMeat, type Mods } from './stats.ts';
 
 export interface FoodLine {
@@ -117,29 +118,35 @@ export function stepEconomy(ctx: Ctx, dt: number): void {
   run.essence += natureIncome(run, ctx.mods).total * dt;
   if (run.wonAt === null) run.human.supplies += humanIncome(run).total * dt;
 
+  const short: Record<Diet, boolean> = { grass: false, meat: false, food: false };
   const feed = (line: FoodLine, set: (v: number) => void, side: Side, diet: Diet) => {
     const next = line.stock + (line.supply - line.demand) * dt;
     if (next >= 0) {
       set(Math.min(line.cap, next));
-      markHungry(run, diet, false);
       return;
     }
     set(0);
-    const short = line.demand > 0 ? Math.min(1, (line.demand - line.supply) / line.demand) : 0;
-    if (short <= 0) return;
-    const wasHungry = run.units.some((u) => u.hungry && UNITS[u.kind].diet === diet);
-    markHungry(run, diet, true);
-    if (!wasHungry) ctx.emit({ type: 'starving', side, diet });
+    const lack = line.demand > 0 ? Math.min(1, (line.demand - line.supply) / line.demand) : 0;
+    if (lack <= 0) return;
+    short[diet] = true;
+    const wasShort = run.units.some((u) => u.hungry && UNITS[u.kind].diet === diet && !famished(run, u));
+    if (!wasShort) ctx.emit({ type: 'starving', side, diet });
     for (const u of run.units) {
       if (UNITS[u.kind].diet !== diet) continue;
-      u.hp -= u.maxHp * BALANCE.nature.starve * short * dt;
+      u.hp -= u.maxHp * BALANCE.nature.starve * lack * dt;
     }
   };
   feed(nf.grass, (v) => (run.grassStock = v), 'nature', 'grass');
   feed(nf.meat, (v) => (run.meatStock = v), 'nature', 'meat');
   feed(hf, (v) => (run.human.food = v), 'human', 'food');
-}
-
-function markHungry(run: RunState, diet: Diet, hungry: boolean): void {
-  for (const u of run.units) if (UNITS[u.kind].diet === diet) u.hungry = hungry;
+  // Hunger: the layer's food ran out, or a predator has gone long without a meal (then it wastes away).
+  const H = BALANCE.hunt;
+  let noPrey: UnitId | null = null;
+  for (const u of run.units) {
+    const starving = famished(run, u);
+    if (starving && !u.hungry && !short[UNITS[u.kind].diet]) noPrey ??= u.kind;
+    u.hungry = short[UNITS[u.kind].diet] || starving;
+    if (starving && run.time - u.fedAt > H.starveAfter) u.hp -= u.maxHp * H.starve * dt;
+  }
+  if (noPrey) ctx.emit({ type: 'noPrey', kind: noPrey });
 }

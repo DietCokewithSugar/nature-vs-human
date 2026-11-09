@@ -10,7 +10,23 @@ export * from './map/grid.ts';
 export { generateMap, valueNoise, HUMAN_START_SHARE, SITE_KINDS, type WorldMap, type Site, type SiteKind, type Town } from './map/generate.ts';
 export { navFor, walkable, UNREACHABLE, type Nav } from './map/nav.ts';
 export { BALANCE } from './config/balance.ts';
-export { UNITS, HERBIVORES, PREDATORS, SOLDIERS, PACK, CHARGE, EXECUTE, THICK, counterMult, type UnitDef, type Special } from './config/units.ts';
+export {
+  UNITS,
+  HERBIVORES,
+  PREDATORS,
+  SOLDIERS,
+  PACK,
+  CHARGE,
+  EXECUTE,
+  THICK,
+  counterMult,
+  predatorsOf,
+  trophicOf,
+  type UnitDef,
+  type Special,
+  type Trophic,
+} from './config/units.ts';
+export { famished, isFull, mealMult, wantsMeal } from './sim/prey.ts';
 export { BUILDINGS, NATURE_BUILDABLE, HUMAN_BUILDABLE, nestOf, type BuildingDef, type TowerDef } from './config/buildings.ts';
 export { PICKS, PICK_BY_ID, type PickDef, type PickEffect } from './config/picks.ts';
 export { TALENTS, TALENT_IDS, talentCost, type TalentDef, type TalentId } from './config/talents.ts';

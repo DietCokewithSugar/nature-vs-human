@@ -2,7 +2,7 @@ import { BALANCE } from './config/balance.ts';
 import { BUILDINGS, NATURE_BUILDABLE } from './config/buildings.ts';
 import { PICKS, PICK_BY_ID } from './config/picks.ts';
 import { TALENTS, talentCost, type TalentId } from './config/talents.ts';
-import { UNITS } from './config/units.ts';
+import { UNITS, predatorsOf } from './config/units.ts';
 import { generateMap } from './map/generate.ts';
 import { CELL, CELLS, cellAt, cellDist, cxOf, cyOf, inGrid, idx } from './map/grid.ts';
 import { createRun, type Building, type GameState, type RunResult, type RunState, type Unit } from './state.ts';
@@ -57,6 +57,7 @@ export class Game {
       byId: new Map(),
       onCell: new Map(),
       visible: new Uint8Array(CELLS),
+      eaten: new Set(),
     };
     this.reindex();
     if (!state.run.buildings.length && state.run.phase !== 'over') this.startRun(state.run.rng);
@@ -239,18 +240,21 @@ export class Game {
           alive.push(u);
           continue;
         }
-        const starved = u.hungry && run.time - u.hitAt > 0.3;
-        this.emit({ type: 'death', id: u.id, kind: u.kind, side: u.side, x: u.x, y: u.y, cause: starved ? 'starve' : 'combat' });
+        const eaten = this.ctx.eaten.has(u.id);
+        const starved = !eaten && u.hungry && run.time - u.hitAt > 0.3;
+        this.emit({ type: 'death', id: u.id, kind: u.kind, side: u.side, x: u.x, y: u.y, cause: eaten ? 'eaten' : starved ? 'starve' : 'combat' });
         if (u.side === 'human') {
           run.stats.kills++;
           const bounty = UNITS[u.kind].bounty * this.bountyMult();
           run.essence += bounty;
           this.emit({ type: 'bounty', x: u.x, y: u.y, amount: bounty });
-        } else if (starved) run.stats.starved++;
+        } else if (eaten) run.stats.eaten++;
+        else if (starved) run.stats.starved++;
         else run.stats.losses++;
       }
       run.units = alive;
     }
+    this.ctx.eaten.clear();
     if (run.buildings.some((b) => b.hp <= 0)) {
       const standing: Building[] = [];
       let natureMainLost = false;
@@ -426,12 +430,17 @@ export class Game {
     const home = tree ? cellAt(tree.x, tree.y - CELL) : map.mother;
     const cap = capital ? capital.cell : map.capital;
     const field = navOf(run).field(cap);
+    // Nests of the species this one eats or is eaten by: predators find a meal close to home.
+    const makes = BUILDINGS[kind].makes;
+    const kin = new Set<string>(makes ? [...(UNITS[makes].prey ?? []), ...predatorsOf(makes)] : []);
+    const near = run.buildings.filter((b) => b.side === 'nature' && kin.has(BUILDINGS[b.kind].makes ?? ''));
     const score = (c: number): number => {
       const toCap = Math.min(field[c]!, 999);
       const toHome = cellDist(c, home);
       if (kind === 'meadow') return toHome;
       if (kind === 'ancient') return toCap;
-      return toCap + Math.max(0, toHome - 5) * 2;
+      const pairs = near.reduce((n, b) => n + (cellDist(c, b.cell) <= 5 ? 1 : 0), 0);
+      return toCap + Math.max(0, toHome - 5) * 2 - Math.min(2, pairs) * 1.5;
     };
     let best = free[0]!;
     let bestS = score(best);

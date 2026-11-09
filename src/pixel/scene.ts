@@ -885,7 +885,14 @@ export class Scene {
         if (e.kind === 'fire' && this.visibleAt(e.x, e.y)) this.spawnFx('flame', 3, e.x, e.y + 4, 0.35);
         break;
       case 'death':
-        if (e.side === 'nature' || this.visibleAt(e.x, e.y)) this.spawnFx('poof', 4, e.x, e.y - 3, e.cause === 'rout' ? 0.5 : 0.42);
+        // Something eaten leaves no puff: the bite says it all.
+        if (e.cause !== 'eaten' && (e.side === 'nature' || this.visibleAt(e.x, e.y))) this.spawnFx('poof', 4, e.x, e.y - 3, e.cause === 'rout' ? 0.5 : 0.42);
+        break;
+      case 'eaten':
+        // A predator caught one of nature's own: a scuffle, and its health coming back.
+        for (let i = 0; i < 3; i++) this.spawnFx('hit', 3, e.x + (Math.random() * 10 - 5), e.y - 4 - Math.random() * 6, 0.22);
+        this.spawnFx('smoke', 3, e.x, e.y - 2, 0.5, 0, -8, true);
+        if (e.heal >= 1) this.float(e.x, e.y - 12, `+${Math.round(e.heal)}`, C.leaf);
         break;
       case 'destroyed':
         if (e.side === 'human' && !this.visibleAt(e.x, e.y)) break;

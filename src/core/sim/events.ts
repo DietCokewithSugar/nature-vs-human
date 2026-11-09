@@ -1,7 +1,7 @@
 import type { RunResult } from '../state.ts';
 import type { BuildingId, Diet, LevelId, Owner, ProjectileKind, Side, UnitId } from '../types.ts';
 
-export type DeathCause = 'combat' | 'starve' | 'rout';
+export type DeathCause = 'combat' | 'starve' | 'rout' | 'eaten';
 
 /** Things the core tells the shell about: sounds, effects, toasts. */
 export type CoreEvent =
@@ -16,6 +16,10 @@ export type CoreEvent =
   | { type: 'flip'; cell: number; owner: Owner }
   | { type: 'research'; level: number }
   | { type: 'starving'; side: Side; diet: Diet }
+  /** A predator caught and ate one of nature's own animals. */
+  | { type: 'eaten'; id: number; kind: UnitId; prey: UnitId; x: number; y: number; heal: number }
+  /** A predator went hungry: no meal for a long while (no prey of its kind about). */
+  | { type: 'noPrey'; kind: UnitId }
   | { type: 'levelUp'; id: LevelId; level: number }
   | { type: 'stageWon'; stage: number; reward: number }
   | { type: 'offer'; offer: string[] }

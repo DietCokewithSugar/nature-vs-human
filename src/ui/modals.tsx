@@ -3,6 +3,7 @@ import { PICK_BY_ID, TALENTS, TALENT_IDS, formatNumber, type PickDef } from '../
 import type { BoardResult } from '../data/leaderboard.ts';
 import { Modal, Pic } from './common.tsx';
 import { COPY } from './copy.ts';
+import { FoodWebModal } from './foodweb.tsx';
 import { app, frame, modal } from './store.ts';
 
 /** Whatever is open: the pick and the end of a run come from the game; the rest from the menu. */
@@ -20,6 +21,8 @@ export function Modals() {
       return <BoardModal />;
     case 'giveUp':
       return <GiveUpModal />;
+    case 'food':
+      return <FoodWebModal />;
     default:
       return null;
   }

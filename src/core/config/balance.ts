@@ -102,6 +102,37 @@ export const BALANCE = {
     firstWave: 150,
   },
 
+  /**
+   * Predators hunting nature's own animals (who eats whom: `prey` in units.ts). Between fights a
+   * predator goes looking for a meal once `appetite` seconds have passed since its last one (birth
+   * counts), or sooner when it's hurt below `hurt` (but not within `digest` of its last meal); below
+   * `flee` it breaks off a fight to go and eat. It takes the nearest prey that isn't fighting, the
+   * wounded first, and eats it: the prey dies, the predator heals `heal` × the prey's max health and
+   * is full (attack ×fullAtk) for `fullFor` seconds. No meal for `hungryAfter` seconds: hungry
+   * (attack ×hungryAtk, slower); past `starveAfter` it also loses `starve` of its max health a second.
+   */
+  hunt: {
+    appetite: 25,
+    hurt: 0.6,
+    flee: 0.35,
+    digest: 8,
+    /** How far it looks for prey, px (a cell is 32), and how long it chases one before giving up. */
+    reach: 256,
+    chase: 10,
+    /** Seconds before it looks again after finding nothing or giving up. */
+    rest: 3,
+    /** Closing in: speed × pounceSpeed within `pounce` px of the prey. */
+    pounce: 48,
+    pounceSpeed: 1.6,
+    heal: 3,
+    fullFor: 60,
+    fullAtk: 1.15,
+    hungryAfter: 45,
+    hungryAtk: 0.7,
+    starveAfter: 90,
+    starve: 0.01,
+  },
+
   /** Power per level: health and attack ×(1 + per)^(level − 1), for both sides. */
   levelPower: 0.15,
 

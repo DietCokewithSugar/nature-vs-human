@@ -31,12 +31,15 @@ interface Result {
   firstClear: number[];
   stageTimes: Map<number, number[]>;
   genes: number;
+  /** Nature's animals eaten by its own predators, and how many were born. */
+  eaten: number;
+  born: number;
 }
 
 function play(style: BotStyle, seed: number): Result {
   const game = new Game(createState());
   game.startRun(seed);
-  const res: Result = { runs: [], best: 0, firstClear: [], stageTimes: new Map(), genes: 0 };
+  const res: Result = { runs: [], best: 0, firstClear: [], stageTimes: new Map(), genes: 0, eaten: 0, born: 0 };
   let stageStart = 0;
   let runStart = 0;
   game.on((e: CoreEvent) => {
@@ -48,6 +51,8 @@ function play(style: BotStyle, seed: number): Result {
       if (res.firstClear[e.stage] === undefined) res.firstClear[e.stage] = t;
     }
     if (e.type === 'stageStarted') stageStart = t;
+    if (e.type === 'eaten') res.eaten++;
+    if (e.type === 'spawn' && e.side === 'nature') res.born++;
     if (e.type === 'runEnded') {
       res.runs.push({ stage: e.result.stage, minutes: (t - runStart) / 60 });
       runStart = t;
@@ -87,14 +92,15 @@ lines.push('- 卡住以后靠回归大地拿基因、买天赋，下一轮走得
 lines.push(`每种玩家在 ${SEEDS.length} 个种子上各玩 ${MINUTES} 分钟（游戏时间），用真实的逻辑核心，输了就买天赋、开下一轮：`, '');
 for (const s of STYLES) lines.push(`- **${s}**：${STYLE_NAME[s]}`);
 lines.push('', '## 结果', '');
-lines.push('| 玩家 | 种子 | 轮数 | 每轮打到第几关 | 最高通关 | 累计基因 |', '|---|---|---|---|---|---|');
+lines.push('| 玩家 | 种子 | 轮数 | 每轮打到第几关 | 最高通关 | 累计基因 | 被自己的捕食者吃掉 |', '|---|---|---|---|---|---|---|');
 const all = new Map<BotStyle, Result[]>();
 for (const style of STYLES) {
   const rs: Result[] = [];
   for (const seed of SEEDS) {
     const r = play(style, seed);
     rs.push(r);
-    lines.push(`| ${style} | ${seed} | ${r.runs.length} | ${r.runs.map((x) => x.stage).join('、') || '—'} | ${r.best} | ${r.genes} |`);
+    const share = r.born ? Math.round((r.eaten / r.born) * 100) : 0;
+    lines.push(`| ${style} | ${seed} | ${r.runs.length} | ${r.runs.map((x) => x.stage).join('、') || '—'} | ${r.best} | ${r.genes} | ${r.eaten}（出生的 ${share}%） |`);
   }
   all.set(style, rs);
 }
@@ -112,6 +118,7 @@ lines.push(`| 人类开局 | 物资 ${BALANCE.human.start}（每关 +${BALANCE.h
 lines.push(`| 人类变强 | 每关起始等级 +${BALANCE.human.levelsPerStage}；每 ${BALANCE.human.researchPeriod} 秒改良工具 +1 级；每级血量和攻击 ×${1 + BALANCE.levelPower} |`);
 lines.push(`| 自然升级 | 每级血量和攻击 ×${1 + BALANCE.levelPower}；价格每级 ×${BALANCE.levelCostGrowth} |`);
 lines.push(`| 食物链 | 草场每座产草 ${BUILDINGS.meadow.grass}/秒（每级 ×${1 + BALANCE.meadowPerLevel}）；吃草：蚂蚁 ${UNITS.ant.eat}、鹿 ${UNITS.elk.eat}、猛犸 ${UNITS.mammoth.eat}；产肉：蚂蚁 ${UNITS.ant.meat}、鹿 ${UNITS.elk.meat}、猛犸 ${UNITS.mammoth.meat}；吃肉：狼 ${UNITS.wolf.eat}、剑齿虎 ${UNITS.sabertooth.eat}、熊 ${UNITS.bear.eat} |`);
+lines.push(`| 捕食 | 狼吃鹿，剑齿虎吃鹿和狼，洞熊吃蚂蚁；${BALANCE.hunt.appetite} 秒没吃或血量低于 ${BALANCE.hunt.hurt * 100}% 时去吃，低于 ${BALANCE.hunt.flee * 100}% 撤出战斗去吃；吃一只回猎物最大血量 ×${BALANCE.hunt.heal}、饱食 ${BALANCE.hunt.fullFor} 秒攻击 ×${BALANCE.hunt.fullAtk}；${BALANCE.hunt.hungryAfter} 秒没吃饥饿（攻击 ×${BALANCE.hunt.hungryAtk}），${BALANCE.hunt.starveAfter} 秒起掉血 |`);
 lines.push(`| 领地 | 每块地每秒 ${BALANCE.nature.perCell} 生机，每个资源点另加 ${BALANCE.nature.site}；控制值越过 ±${BALANCE.territory.flip} 换主人 |`);
 lines.push('');
 

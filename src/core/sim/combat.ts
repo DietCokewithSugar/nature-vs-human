@@ -7,6 +7,7 @@ import type { Building, Projectile, Unit } from '../state.ts';
 import type { BuildingId, ProjectileKind, Side, Tag, UnitId } from '../types.ts';
 import { buildingRadius, isUnit, mapOf, navOf, ownerOf, type Ctx } from './ctx.ts';
 import { chooseGoal, countCrowd, goalDone, goalPoint } from './march.ts';
+import { eat, findPrey, fleeing, mealMult, wantsMeal } from './prey.ts';
 import { towerDmg, unitAtk, unitSpeed } from './stats.ts';
 
 type Entity = Unit | Building;
@@ -83,7 +84,7 @@ function terrainSpeed(ctx: Ctx, u: Unit): number {
 /** Damage after the attacker's specials against this target. */
 function strikeDamage(ctx: Ctx, u: Unit, t: Entity): { dmg: number; crit: boolean } {
   const def = UNITS[u.kind];
-  let dmg = unitAtk(u.kind, ctx.run, ctx.mods);
+  let dmg = unitAtk(u.kind, ctx.run, ctx.mods) * mealMult(ctx.run, u);
   let crit = false;
   if (def.special === 'charge' && ctx.run.time - u.fought >= BALANCE.quiet) {
     dmg *= CHARGE.mult + ctx.mods.charge;
@@ -149,10 +150,50 @@ function shoot(ctx: Ctx, side: Side, kind: ProjectileKind, from: UnitId | Buildi
   ctx.run.projectiles.push(p);
 }
 
+/**
+ * A predator with nothing to fight and a meal wanted: pick prey, run it down, eat it.
+ * True while it's busy hunting (so it doesn't march on this step).
+ */
+function hunt(ctx: Ctx, u: Unit, nav: Nav, step: number, taken: Set<number>): boolean {
+  const run = ctx.run;
+  const H = BALANCE.hunt;
+  let prey = u.hunt ? ctx.byId.get(u.hunt) : undefined;
+  if (u.hunt && (!prey || !isUnit(prey) || prey.hp <= 0 || run.time > u.huntUntil || dist(u.x, u.y, prey.x, prey.y) > H.reach * 1.5)) {
+    // Lost it: catch breath, then look again.
+    taken.delete(u.hunt);
+    u.hunt = 0;
+    u.huntUntil = run.time + H.rest;
+    prey = undefined;
+  }
+  if (!prey || !isUnit(prey)) {
+    if (run.time < u.huntUntil || !wantsMeal(run, u)) return false;
+    const found = findPrey(ctx, u, taken);
+    if (!found) {
+      u.huntUntil = run.time + H.rest;
+      return false;
+    }
+    prey = found;
+    u.hunt = found.id;
+    u.huntUntil = run.time + H.chase;
+    taken.add(found.id);
+  }
+  const d = dist(u.x, u.y, prey.x, prey.y);
+  if (d > UNITS[u.kind].r + UNITS[prey.kind].r + 4) {
+    walk(nav, u, prey.x, prey.y, step * (d < H.pounce ? H.pounceSpeed : 1));
+    return true;
+  }
+  taken.delete(prey.id);
+  eat(ctx, u, prey);
+  return true;
+}
+
 export function stepUnits(ctx: Ctx, dt: number): void {
   const run = ctx.run;
   const nav = navOf(run);
   countCrowd(ctx);
+  // Prey some predator is already after.
+  const taken = new Set<number>();
+  for (const u of run.units) if (u.hunt && u.hp > 0) taken.add(u.hunt);
   const rethink = BALANCE.march.rethink;
   for (const u of run.units) {
     if (u.hp <= 0) continue;
@@ -169,6 +210,11 @@ export function stepUnits(ctx: Ctx, dt: number): void {
     }
     u.target = t ? t.id : 0;
     const speed = unitSpeed(u.kind, ctx.mods) * (u.hungry ? 0.8 : 1) * terrainSpeed(ctx, u);
+    // Badly hurt predators break off to eat and come back whole.
+    if (t && fleeing(u) && hunt(ctx, u, nav, speed * dt, taken)) {
+      u.target = 0;
+      continue;
+    }
     if (t) {
       const ranged = def.range > 20;
       const reach = (ranged ? def.range : def.r + def.range) + radiusOf(t);
@@ -195,7 +241,9 @@ export function stepUnits(ctx: Ctx, dt: number): void {
       }
       continue;
     }
-    // Nothing to fight: on to its goal, choosing a new one now and then.
+    // Nothing to fight: a hungry or hurt predator hunts first.
+    if (def.prey && hunt(ctx, u, nav, speed * dt, taken)) continue;
+    // Then on to its goal, choosing a new one now and then.
     if (u.rethink <= 0 || (u.rethink < rethink - 0.4 && goalDone(ctx, u))) {
       u.goal = chooseGoal(ctx, u);
       u.rethink = rethink * (0.8 + ((u.id * 7) % 5) * 0.1);

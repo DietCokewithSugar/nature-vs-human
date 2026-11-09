@@ -948,6 +948,144 @@ h3 {
   display: none;
 }
 
+/* ── Who eats whom ────────────────────────────────────────────── */
+
+.toast small {
+  white-space: pre-line;
+  text-align: center;
+}
+
+.chain-web {
+  align-self: flex-end;
+}
+
+.chain-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 4px;
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.trophic {
+  display: inline-block;
+  padding: 0 3px;
+  font-size: 11px;
+  line-height: 14px;
+  color: white;
+  background: #239063;
+  text-shadow: 0 1px 0 #165a4c;
+  white-space: nowrap;
+}
+
+.trophic[data-level='grazer'] {
+  background: #676633;
+  text-shadow: 0 1px 0 #4c3e24;
+}
+
+.trophic[data-level='middle'] {
+  background: #cd683d;
+  text-shadow: 0 1px 0 #9e4539;
+}
+
+.trophic[data-level='apex'] {
+  background: #ae2334;
+  text-shadow: 0 1px 0 #6e2727;
+}
+
+.trophic[data-level='missing'] {
+  background: #ea4f36;
+  text-shadow: 0 1px 0 #6e2727;
+  animation: blink 0.6s steps(2) infinite;
+}
+
+.web {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.web-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-left: 4px solid #239063;
+  background: rgba(46, 34, 47, 0.06);
+}
+
+.web-row[data-level='grazer'] {
+  border-left-color: #676633;
+}
+
+.web-row[data-level='middle'] {
+  border-left-color: #cd683d;
+}
+
+.web-row[data-level='apex'] {
+  border-left-color: #ae2334;
+}
+
+.web-pic {
+  flex: none;
+  width: 52px;
+  display: flex;
+  justify-content: center;
+}
+
+.web-pic img {
+  max-width: 52px;
+  max-height: 44px;
+}
+
+.web-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.3;
+}
+
+.web-text b {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.web-links {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.web-eats,
+.web-by {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.web-eats .pic img,
+.web-by .pic img {
+  max-height: 18px;
+}
+
+.web-by {
+  color: var(--danger-text);
+}
+
+.web-by[data-none] {
+  color: var(--text-muted);
+}
+
+@media (max-width: 560px) {
+  .web {
+    grid-template-columns: 1fr;
+  }
+}
+
 @keyframes pop {
   from {
     transform: translateY(6px);
